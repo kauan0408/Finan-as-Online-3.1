@@ -1,0 +1,172 @@
+.page {
+  width: 100%;
+}
+
+.page-title {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 12px;
+  padding-bottom: 4px;
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.page-title::after {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  max-width: 90px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  content: "";
+}
+
+.card {
+  position: relative;
+  overflow: hidden;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.card h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.muted {
+  color: var(--text-soft);
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.form {
+  margin-top: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+
+.field label {
+  margin-bottom: 4px;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(173, 216, 255, 0.16);
+  border-radius: 10px;
+  outline: none;
+  background: rgba(9, 18, 38, 0.75);
+  color: var(--text);
+  font: inherit;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: rgba(173, 216, 255, 0.55);
+}
+
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
+.primary-btn {
+  width: 100%;
+  min-height: var(--btn-h);
+  margin-top: 4px;
+  padding: 0 var(--btn-pad-x);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: radial-gradient(
+    circle at 30% 0,
+    var(--accent),
+    var(--accent-strong)
+  );
+  color: #041023;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.14s ease-out, filter 0.18s ease-out;
+}
+
+.primary-btn:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.primary-btn:active {
+  transform: scale(0.98);
+}
+
+.toggle-group {
+  display: flex;
+  gap: 6px;
+}
+
+.toggle-btn {
+  flex: 1;
+  min-height: var(--btn-h);
+  padding: 0 var(--btn-pad-x);
+  border: 1px solid rgba(173, 216, 255, 0.18);
+  border-radius: var(--radius-pill);
+  background: rgba(9, 18, 38, 0.55);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.toggle-active {
+  border-color: rgba(173, 216, 255, 0.55);
+  background: rgba(173, 216, 255, 0.22);
+  color: var(--accent);
+}
+
+.feedback {
+  margin-top: 8px;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  z-index: 9999;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 72px 16px 16px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 120px);
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid rgba(173, 216, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(9, 18, 38, 0.92);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.75);
+}

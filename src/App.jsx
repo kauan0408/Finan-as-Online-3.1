@@ -1313,6 +1313,7 @@ export default function App() {
     lancamentoId,
     pessoaDestinoId,
     valor,
+    destinos,
   }) {
     const listaAtual = Array.isArray(quemMeDeve.lancamentos)
       ? quemMeDeve.lancamentos
@@ -1322,258 +1323,279 @@ export default function App() {
       (lancamento) => lancamento.id === lancamentoId
     );
 
-    if (!original || original.tipo !== "divida" || !pessoaDestinoId) {
-      return false;
-    }
-
-    if (pessoaDestinoId === original.pessoaId) {
+    if (!original || original.tipo !== "divida") {
       return false;
     }
 
     const valorOriginal = Number(original.valor || 0);
-    const valorTransferir = Number(valor || 0);
+    if (!(valorOriginal > 0)) return false;
+
+    const entradas = Array.isArray(destinos) && destinos.length
+      ? destinos
+      : pessoaDestinoId
+        ? [{ pessoaId: pessoaDestinoId, valor }]
+        : [];
+
+    const mapaDestinos = new Map();
+
+    entradas.forEach((entrada) => {
+      const id = entrada?.pessoaId;
+      const valorEntrada = Number(entrada?.valor || 0);
+      if (!id || !(valorEntrada > 0)) return;
+      mapaDestinos.set(
+        id,
+        Number(((mapaDestinos.get(id) || 0) + valorEntrada).toFixed(2))
+      );
+    });
+
+    const destinosNormalizados = Array.from(mapaDestinos.entries()).map(
+      ([pessoaIdNormalizada, valorNormalizado]) => ({
+        pessoaId: pessoaIdNormalizada,
+        valor: valorNormalizado,
+      })
+    );
+
+    if (!destinosNormalizados.length) return false;
 
     if (
-      !(valorOriginal > 0) ||
-      !(valorTransferir > 0) ||
-      valorTransferir > valorOriginal + 0.01
+      destinosNormalizados.some(
+        (item) => item.pessoaId === original.pessoaId
+      )
+    ) {
+      return false;
+    }
+
+    const pessoasValidas = new Set(
+      (quemMeDeve.pessoas || []).map((pessoa) => pessoa.id)
+    );
+
+    if (
+      destinosNormalizados.some(
+        (item) => !pessoasValidas.has(item.pessoaId)
+      )
+    ) {
+      return false;
+    }
+
+    const valorTotalTransferir = Number(
+      destinosNormalizados
+        .reduce((soma, item) => soma + Number(item.valor || 0), 0)
+        .toFixed(2)
+    );
+
+    if (
+      !(valorTotalTransferir > 0) ||
+      valorTotalTransferir > valorOriginal + 0.01
     ) {
       return false;
     }
 
     const transferenciaTotal =
-      Math.abs(valorTransferir - valorOriginal) <= 0.01;
+      Math.abs(valorTotalTransferir - valorOriginal) <= 0.01;
 
     const pessoaOrigem = (quemMeDeve.pessoas || []).find(
       (pessoa) => pessoa.id === original.pessoaId
     );
-    const pessoaDestino = (quemMeDeve.pessoas || []).find(
-      (pessoa) => pessoa.id === pessoaDestinoId
-    );
-
-    if (!pessoaDestino) return false;
 
     const grupoEfetivo =
       original.grupoId ||
-      (transferenciaTotal ? "" : gerarId());
+      (destinosNormalizados.length > 1 || !transferenciaTotal
+        ? gerarId()
+        : "");
 
     const percentualOriginal = Number(original.porcentagem || 0);
-    const proporcao = Math.min(
-      1,
-      valorTransferir / Math.max(valorOriginal, 0.000001)
+    const valorTotalReferencia = Math.max(
+      Number(original.valorTotal || valorOriginal),
+      0.000001
     );
 
-    const percentualTransferido = Number(
-      (
-        percentualOriginal > 0
-          ? percentualOriginal * proporcao
-          : (
-              (valorTransferir /
-                Math.max(
-                  Number(original.valorTotal || valorOriginal),
-                  0.000001
-                )) *
-              100
-            )
-      ).toFixed(2)
-    );
+    // Caso simples antigo: uma pessoa recebe a dívida inteira.
+    if (
+      !grupoEfetivo &&
+      destinosNormalizados.length === 1 &&
+      transferenciaTotal
+    ) {
+      const destino = destinosNormalizados[0];
 
-    const percentualRestante = Number(
-      Math.max(
-        0,
-        percentualOriginal - percentualTransferido
-      ).toFixed(2)
-    );
-
-    const destinoNoMesmoGrupo = grupoEfetivo
-      ? listaAtual.find(
-          (lancamento) =>
-            lancamento.id !== original.id &&
-            lancamento.tipo === "divida" &&
-            lancamento.grupoId === grupoEfetivo &&
-            lancamento.pessoaId === pessoaDestinoId &&
-            (lancamento.sentido || "me_deve") ===
-              (original.sentido || "me_deve")
-        )
-      : null;
-
-    let novosLancamentos;
-
-    if (transferenciaTotal) {
-      if (destinoNoMesmoGrupo) {
-        novosLancamentos = listaAtual
-          .filter((lancamento) => lancamento.id !== original.id)
-          .map((lancamento) => {
-            if (lancamento.id !== destinoNoMesmoGrupo.id) {
-              return lancamento;
+      const novosLancamentos = listaAtual.map((lancamento) =>
+        lancamento.id === original.id
+          ? {
+              ...lancamento,
+              pessoaId: destino.pessoaId,
+              transferidoEm: new Date().toISOString(),
+              transferenciaOrigemPessoaId: original.pessoaId,
             }
-
-            return {
-              ...lancamento,
-              valor: Number(
-                (
-                  Number(lancamento.valor || 0) +
-                  valorOriginal
-                ).toFixed(2)
-              ),
-              porcentagem: Number(
-                (
-                  Number(lancamento.porcentagem || 0) +
-                  percentualOriginal
-                ).toFixed(2)
-              ),
-              transferidoEm: new Date().toISOString(),
-              transferenciaOrigemPessoaId: original.pessoaId,
-            };
-          });
-      } else {
-        novosLancamentos = listaAtual.map((lancamento) =>
-          lancamento.id === original.id
-            ? {
-                ...lancamento,
-                pessoaId: pessoaDestinoId,
-                transferidoEm: new Date().toISOString(),
-                transferenciaOrigemPessoaId: original.pessoaId,
-              }
-            : lancamento
-        );
-      }
-    } else {
-      const valorRestante = Number(
-        (valorOriginal - valorTransferir).toFixed(2)
+          : lancamento
       );
 
-      const originalAtualizado = {
-        ...original,
-        grupoId: grupoEfetivo,
-        valor: valorRestante,
-        porcentagem: percentualRestante,
-      };
+      setQuemMeDeve((atual) => ({
+        ...atual,
+        lancamentos: novosLancamentos,
+      }));
 
-      const novaParte = {
-        ...original,
-        id: gerarId(),
-        grupoId: grupoEfetivo,
-        pessoaId: pessoaDestinoId,
-        valor: Number(valorTransferir.toFixed(2)),
-        porcentagem: percentualTransferido,
-        transferidoEm: new Date().toISOString(),
-        transferenciaOrigemPessoaId: original.pessoaId,
-        criadoEm: new Date().toISOString(),
-      };
-
-      if (destinoNoMesmoGrupo) {
-        novosLancamentos = listaAtual.map((lancamento) => {
-          if (lancamento.id === original.id) {
-            return originalAtualizado;
-          }
-
-          if (lancamento.id === destinoNoMesmoGrupo.id) {
-            return {
-              ...lancamento,
-              valor: Number(
-                (
-                  Number(lancamento.valor || 0) +
-                  valorTransferir
-                ).toFixed(2)
-              ),
-              porcentagem: Number(
-                (
-                  Number(lancamento.porcentagem || 0) +
-                  percentualTransferido
-                ).toFixed(2)
-              ),
-              transferidoEm: new Date().toISOString(),
-              transferenciaOrigemPessoaId: original.pessoaId,
-            };
-          }
-
-          return lancamento;
-        });
-      } else {
-        novosLancamentos = [
-          novaParte,
-          ...listaAtual.map((lancamento) =>
-            lancamento.id === original.id
-              ? originalAtualizado
-              : lancamento
-          ),
-        ];
-      }
-    }
-
-    setQuemMeDeve((atual) => ({
-      ...atual,
-      lancamentos: novosLancamentos,
-    }));
-
-    if (grupoEfetivo) {
-      const pessoaIdsDoGrupo = [
-        ...new Set(
-          novosLancamentos
-            .filter(
-              (lancamento) =>
-                lancamento.grupoId === grupoEfetivo &&
-                lancamento.tipo === "divida"
-            )
-            .map((lancamento) => lancamento.pessoaId)
-            .filter(Boolean)
-        ),
-      ];
-
-      setTransacoes((lista) =>
-        lista.map((transacao) => {
-          const pertenceAoGrupo =
-            transacao.quemMeDeveGrupoId === grupoEfetivo;
-
-          const eraLancamentoIndividualConvertido =
-            !original.grupoId &&
-            transacao.quemMeDeveLancamentoId === original.id;
-
-          if (
-            !pertenceAoGrupo &&
-            !eraLancamentoIndividualConvertido
-          ) {
-            return transacao;
-          }
-
-          return {
-            ...transacao,
-            quemMeDeveGrupoId: grupoEfetivo,
-            quemMeDeveLancamentoId: undefined,
-            pessoaId: undefined,
-            pessoaIds: pessoaIdsDoGrupo,
-          };
-        })
-      );
-    } else {
       setTransacoes((lista) =>
         lista.map((transacao) =>
           transacao.quemMeDeveLancamentoId === original.id ||
           transacao.id === original.transacaoId
             ? {
                 ...transacao,
-                pessoaId: pessoaDestinoId,
+                pessoaId: destino.pessoaId,
               }
             : transacao
         )
       );
+
+      const pessoaDestino = (quemMeDeve.pessoas || []).find(
+        (pessoa) => pessoa.id === destino.pessoaId
+      );
+
+      notificar(
+        `Dívida transferida de ${pessoaOrigem?.nome || "Pessoa anterior"} para ${pessoaDestino?.nome || "Nova pessoa"}.`,
+        "sucesso"
+      );
+
+      return true;
     }
 
-    const nomeOrigem =
-      pessoaOrigem?.nome || "Pessoa anterior";
-    const nomeDestino =
-      pessoaDestino?.nome || "Nova pessoa";
-
-    const valorFormatado = Number(valorTransferir).toLocaleString(
-      "pt-BR",
-      { style: "currency", currency: "BRL" }
+    let novosLancamentos = listaAtual.filter(
+      (lancamento) => lancamento.id !== original.id
     );
 
+    const valorRestante = Number(
+      Math.max(0, valorOriginal - valorTotalTransferir).toFixed(2)
+    );
+
+    const percentualTransferidoTotal = Number(
+      destinosNormalizados
+        .reduce((soma, item) => {
+          const proporcao = Number(item.valor || 0) / Math.max(valorOriginal, 0.000001);
+          const percentual =
+            percentualOriginal > 0
+              ? percentualOriginal * proporcao
+              : (Number(item.valor || 0) / valorTotalReferencia) * 100;
+          return soma + percentual;
+        }, 0)
+        .toFixed(2)
+    );
+
+    const percentualRestante = Number(
+      Math.max(0, percentualOriginal - percentualTransferidoTotal).toFixed(2)
+    );
+
+    if (valorRestante > 0.009) {
+      novosLancamentos.push({
+        ...original,
+        grupoId: grupoEfetivo,
+        valor: valorRestante,
+        porcentagem: percentualRestante,
+      });
+    }
+
+    destinosNormalizados.forEach((destino) => {
+      const proporcao =
+        Number(destino.valor || 0) / Math.max(valorOriginal, 0.000001);
+
+      const percentualDestino = Number(
+        (
+          percentualOriginal > 0
+            ? percentualOriginal * proporcao
+            : (Number(destino.valor || 0) / valorTotalReferencia) * 100
+        ).toFixed(2)
+      );
+
+      const existenteIndex = novosLancamentos.findIndex(
+        (lancamento) =>
+          lancamento.tipo === "divida" &&
+          lancamento.grupoId === grupoEfetivo &&
+          lancamento.pessoaId === destino.pessoaId &&
+          (lancamento.sentido || "me_deve") ===
+            (original.sentido || "me_deve")
+      );
+
+      if (existenteIndex >= 0) {
+        const existente = novosLancamentos[existenteIndex];
+        novosLancamentos[existenteIndex] = {
+          ...existente,
+          valor: Number(
+            (
+              Number(existente.valor || 0) +
+              Number(destino.valor || 0)
+            ).toFixed(2)
+          ),
+          porcentagem: Number(
+            (
+              Number(existente.porcentagem || 0) +
+              percentualDestino
+            ).toFixed(2)
+          ),
+          transferidoEm: new Date().toISOString(),
+          transferenciaOrigemPessoaId: original.pessoaId,
+        };
+      } else {
+        novosLancamentos.push({
+          ...original,
+          id: gerarId(),
+          grupoId: grupoEfetivo,
+          pessoaId: destino.pessoaId,
+          valor: Number(Number(destino.valor || 0).toFixed(2)),
+          porcentagem: percentualDestino,
+          transferidoEm: new Date().toISOString(),
+          transferenciaOrigemPessoaId: original.pessoaId,
+          criadoEm: new Date().toISOString(),
+        });
+      }
+    });
+
+    setQuemMeDeve((atual) => ({
+      ...atual,
+      lancamentos: novosLancamentos,
+    }));
+
+    const pessoaIdsDoGrupo = [
+      ...new Set(
+        novosLancamentos
+          .filter(
+            (lancamento) =>
+              lancamento.grupoId === grupoEfetivo &&
+              lancamento.tipo === "divida"
+          )
+          .map((lancamento) => lancamento.pessoaId)
+          .filter(Boolean)
+      ),
+    ];
+
+    setTransacoes((lista) =>
+      lista.map((transacao) => {
+        const pertenceAoGrupo =
+          transacao.quemMeDeveGrupoId === grupoEfetivo;
+
+        const eraLancamentoIndividualConvertido =
+          !original.grupoId &&
+          transacao.quemMeDeveLancamentoId === original.id;
+
+        if (!pertenceAoGrupo && !eraLancamentoIndividualConvertido) {
+          return transacao;
+        }
+
+        return {
+          ...transacao,
+          quemMeDeveGrupoId: grupoEfetivo,
+          quemMeDeveLancamentoId: undefined,
+          pessoaId: undefined,
+          pessoaIds: pessoaIdsDoGrupo,
+        };
+      })
+    );
+
+    const valorFormatado = valorTotalTransferir.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+
     notificar(
-      transferenciaTotal
-        ? `Dívida transferida de ${nomeOrigem} para ${nomeDestino}.`
-        : `${valorFormatado} transferidos de ${nomeOrigem} para ${nomeDestino}.`,
+      destinosNormalizados.length > 1
+        ? `${valorFormatado} divididos entre ${destinosNormalizados.length} pessoas.`
+        : `${valorFormatado} transferidos para outra pessoa.`,
       "sucesso"
     );
 

@@ -114,6 +114,7 @@ export default function QuemMeDevePage() {
 
   const [pessoaAbertaId, setPessoaAbertaId] = useState("");
   const [pessoaRevelandoId, setPessoaRevelandoId] = useState("");
+  const [historicoDetalhadoPessoaId, setHistoricoDetalhadoPessoaId] = useState("");
   const carrosselRef = useRef(null);
   const [modal, setModal] = useState("");
   const [mostrarAjuda, setMostrarAjuda] = useState(false);
@@ -175,6 +176,7 @@ export default function QuemMeDevePage() {
   const [transferindoLancamentoId, setTransferindoLancamentoId] = useState("");
   const [transferenciaPessoaDestinoId, setTransferenciaPessoaDestinoId] =
     useState("");
+  const [transferenciaPessoaDestinoIds, setTransferenciaPessoaDestinoIds] = useState([]);
   const [transferenciaModo, setTransferenciaModo] = useState("total");
   const [transferenciaValor, setTransferenciaValor] = useState("");
 
@@ -193,6 +195,9 @@ export default function QuemMeDevePage() {
   const [secaoObservacaoAberta, setSecaoObservacaoAberta] = useState(false);
   const [secaoGrupoAberta, setSecaoGrupoAberta] = useState(false);
   const [mostrarMaisLancamento, setMostrarMaisLancamento] = useState(false);
+  const [painelParticipantesLancamento, setPainelParticipantesLancamento] = useState("");
+  const [mostrarFotoLancamento, setMostrarFotoLancamento] = useState(false);
+  const [mostrarDestinoFinanceiroModal, setMostrarDestinoFinanceiroModal] = useState(false);
   const [novoGrupoNome, setNovoGrupoNome] = useState("");
   const [novoGrupoPessoaIds, setNovoGrupoPessoaIds] = useState([]);
   const [editandoGrupoId, setEditandoGrupoId] = useState("");
@@ -216,8 +221,11 @@ export default function QuemMeDevePage() {
     if (typeof document === "undefined") return undefined;
 
     const classe = "acertos-nova-divida-aberta";
+    const temJanelaAberta = Boolean(
+      modal || confirmacao || ajudaSecao || mostrarDestinoFinanceiroModal
+    );
 
-    if (modal === "nova-divida") {
+    if (temJanelaAberta) {
       document.body.classList.add(classe);
     } else {
       document.body.classList.remove(classe);
@@ -226,7 +234,7 @@ export default function QuemMeDevePage() {
     return () => {
       document.body.classList.remove(classe);
     };
-  }, [modal]);
+  }, [modal, confirmacao, ajudaSecao, mostrarDestinoFinanceiroModal]);
 
   function avisar(texto, tipo = "info") {
     setMensagem(texto);
@@ -570,6 +578,7 @@ export default function QuemMeDevePage() {
     setEditandoLancamentoId("");
     setTransferindoLancamentoId("");
     setTransferenciaPessoaDestinoId("");
+    setTransferenciaPessoaDestinoIds([]);
     setTransferenciaModo("total");
     setTransferenciaValor("");
     setOrigemImportacao("manual");
@@ -580,6 +589,9 @@ export default function QuemMeDevePage() {
     setSecaoObservacaoAberta(false);
     setSecaoGrupoAberta(false);
     setMostrarMaisLancamento(false);
+    setPainelParticipantesLancamento("");
+    setMostrarFotoLancamento(false);
+    setMostrarDestinoFinanceiroModal(false);
     setNovoGrupoNome("");
     setNovoGrupoPessoaIds([]);
     setEditandoGrupoId("");
@@ -608,6 +620,7 @@ export default function QuemMeDevePage() {
   function abrirNovaDivida(id = "", origem = "manual") {
     limparFormulario();
     setOrigemImportacao(origem);
+    setModoLancamentoDivida("lancar");
     if (id) {
       setPessoasSelecionadas([id]);
       setPercentuais({ [id]: 100 });
@@ -634,7 +647,46 @@ export default function QuemMeDevePage() {
     limparFormulario();
     setPessoaId(id);
     setSentido(sentidoAcerto);
+    setModoLancamentoDivida("quitar");
+    const pendente = saldoPessoaPorSentido(id, sentidoAcerto);
+    setValorDireto(
+      pendente > 0 ? String(Number(pendente.toFixed(2))) : ""
+    );
     setModal("acerto");
+  }
+
+  function abrirQuitacaoPessoa(id) {
+    const extrato = extratos.find((item) => item.pessoa.id === id);
+    if (!extrato) return;
+
+    const sentidoInicial =
+      extrato.saldoRealMeDevem > 0 ? "me_deve" : "eu_devo";
+
+    abrirAcerto(id, sentidoInicial);
+  }
+
+  function mudarSentidoQuitacao(novoSentido) {
+    setSentido(novoSentido);
+    const pendente = saldoPessoaPorSentido(pessoaId, novoSentido);
+    if (modoLancamentoDivida === "quitar") {
+      setValorDireto(
+        pendente > 0 ? String(Number(pendente.toFixed(2))) : ""
+      );
+    } else {
+      setValorDireto("");
+    }
+  }
+
+  function mudarModoQuitacao(novoModo) {
+    setModoLancamentoDivida(novoModo);
+    const pendente = saldoPessoaPorSentido(pessoaId, sentido);
+    if (novoModo === "quitar") {
+      setValorDireto(
+        pendente > 0 ? String(Number(pendente.toFixed(2))) : ""
+      );
+    } else {
+      setValorDireto("");
+    }
   }
 
   function abrirEditarLancamento(item) {
@@ -696,9 +748,49 @@ export default function QuemMeDevePage() {
     limparFormulario();
     setTransferindoLancamentoId(item.id);
     setTransferenciaPessoaDestinoId("");
+    setTransferenciaPessoaDestinoIds([]);
     setTransferenciaModo("total");
     setTransferenciaValor(String(numero(item.valor).toFixed(2)));
     setModal("transferir-divida");
+  }
+
+  function alternarDestinoTransferencia(id) {
+    setTransferenciaPessoaDestinoIds((atuais) =>
+      atuais.includes(id)
+        ? atuais.filter((item) => item !== id)
+        : [...atuais, id]
+    );
+  }
+
+  function aplicarGrupoTransferencia(grupo, pessoaOrigemId) {
+    const ids = (Array.isArray(grupo?.pessoaIds) ? grupo.pessoaIds : [])
+      .filter((id) => id !== EU_ID && id !== pessoaOrigemId)
+      .filter((id) => pessoas.some((pessoa) => pessoa.id === id));
+
+    if (!ids.length) {
+      return avisar("Este grupo não tem outras pessoas disponíveis.", "erro");
+    }
+
+    setTransferenciaPessoaDestinoIds([...new Set(ids)]);
+    avisar(`Grupo ${grupo.nome} selecionado para a transferência.`, "sucesso");
+  }
+
+  function dividirValorEntreDestinos(valorTotalTransferir, ids) {
+    const lista = [...new Set(ids)].filter(Boolean);
+    if (!lista.length) return [];
+
+    const totalCentavos = Math.max(
+      0,
+      Math.round(numero(valorTotalTransferir) * 100)
+    );
+    const base = Math.floor(totalCentavos / lista.length);
+    let resto = totalCentavos - base * lista.length;
+
+    return lista.map((pessoaId) => {
+      const centavos = base + (resto > 0 ? 1 : 0);
+      if (resto > 0) resto -= 1;
+      return { pessoaId, valor: centavos / 100 };
+    });
   }
 
   function salvarTransferenciaDivida(evento) {
@@ -712,12 +804,15 @@ export default function QuemMeDevePage() {
       return avisar("Não encontrei esta dívida.", "erro");
     }
 
-    if (!transferenciaPessoaDestinoId) {
-      return avisar("Escolha para quem a dívida será transferida.", "erro");
-    }
+    const idsDestino = [...new Set(transferenciaPessoaDestinoIds)].filter(
+      (id) => id && id !== original.pessoaId
+    );
 
-    if (transferenciaPessoaDestinoId === original.pessoaId) {
-      return avisar("Escolha uma pessoa diferente.", "erro");
+    if (!idsDestino.length) {
+      return avisar(
+        "Escolha uma ou mais pessoas, ou selecione um grupo.",
+        "erro"
+      );
     }
 
     const valorAtual = numero(original.valor);
@@ -737,17 +832,27 @@ export default function QuemMeDevePage() {
       );
     }
 
+    const destinos = dividirValorEntreDestinos(
+      valorTransferir,
+      idsDestino
+    ).filter((item) => item.valor > 0);
+
     const resultado = transferirDividaQuemMeDeve?.({
       lancamentoId: original.id,
-      pessoaDestinoId: transferenciaPessoaDestinoId,
-      valor: valorTransferir,
+      destinos,
     });
 
     if (resultado === false) {
       return avisar("Não foi possível transferir esta dívida.", "erro");
     }
 
-    setPessoaAbertaId(transferenciaPessoaDestinoId);
+    setPessoaAbertaId(idsDestino[0] || original.pessoaId);
+    avisar(
+      idsDestino.length > 1
+        ? `Dívida dividida entre ${idsDestino.length} pessoas.`
+        : "Dívida transferida.",
+      "sucesso"
+    );
     fecharModal();
   }
 
@@ -1125,7 +1230,11 @@ export default function QuemMeDevePage() {
 
   function salvarAcerto(evento) {
     evento.preventDefault();
-    const valor = numero(valorDireto);
+    const pendenteAtual = saldoPessoaPorSentido(pessoaId, sentido);
+    const valor =
+      modoLancamentoDivida === "quitar"
+        ? pendenteAtual
+        : numero(valorDireto);
     if (!pessoaId || !(valor > 0)) {
       return avisar("Informe a pessoa e o valor.", "erro");
     }
@@ -1675,6 +1784,7 @@ export default function QuemMeDevePage() {
       Array.isArray(grupo.pessoaIds) ? [...grupo.pessoaIds] : []
     );
     setSecaoGrupoAberta(true);
+    setPainelParticipantesLancamento("grupos");
   }
 
   function cancelarEdicaoGrupo() {
@@ -2414,10 +2524,12 @@ export default function QuemMeDevePage() {
 
     if (jaEstaAberta) {
       setPessoaAbertaId("");
+      setHistoricoDetalhadoPessoaId("");
       return;
     }
 
     setPessoaAbertaId(pessoaId);
+    setHistoricoDetalhadoPessoaId("");
     setPessoaRevelandoId(pessoaId);
 
     requestAnimationFrame(() => {
@@ -2742,14 +2854,29 @@ export default function QuemMeDevePage() {
                 </div>
 
                 <div className="devedor-acoes">
-                  <button type="button" className="primary-btn" onClick={() => abrirNovaDivida(pessoa.id)}>＋ Nova dívida</button>
-                  {saldoMeDevem > 0 ? <button type="button" className="toggle-btn" onClick={() => abrirAcerto(pessoa.id, "me_deve")}>💸 Pessoa me pagou</button> : null}
-                  {saldoEuDevo > 0 ? <button type="button" className="toggle-btn" onClick={() => abrirAcerto(pessoa.id, "eu_devo")}>💳 Eu paguei</button> : null}
+                  <button type="button" className="primary-btn" onClick={() => abrirNovaDivida(pessoa.id)}>＋ Lançar</button>
+                  {saldoMeDevem > 0 || saldoEuDevo > 0 ? (
+                    <button type="button" className="toggle-btn" onClick={() => abrirQuitacaoPessoa(pessoa.id)}>✓ Quitar</button>
+                  ) : null}
                   <button type="button" className="toggle-btn" onClick={() => abrirPdfPessoa(pessoa.id)}>📄 Gerar PDF</button>
                   <button type="button" className="toggle-btn" onClick={() => abrirEditarPessoa(pessoa)}>✏️ Personalizar</button>
                   <button type="button" className="toggle-btn danger-soft" onClick={() => apagarPessoa(pessoa.id)}>🗑️ Apagar</button>
                 </div>
 
+                <button
+                  type="button"
+                  className="toggle-btn"
+                  style={{ width: "100%", marginTop: 10 }}
+                  onClick={() =>
+                    setHistoricoDetalhadoPessoaId((atual) =>
+                      atual === pessoa.id ? "" : pessoa.id
+                    )
+                  }
+                >
+                  📜 Histórico detalhado {historicoDetalhadoPessoaId === pessoa.id ? "▲" : "▼"}
+                </button>
+
+                {historicoDetalhadoPessoaId === pessoa.id ? (
                 <section className="devedor-historico-detalhado">
                   <div className="devedor-historico-titulo"><h4>Histórico detalhado</h4><p className="muted small">Para quem, de onde, o quê, porcentagem, valor e forma.</p></div>
                   {itens.length === 0 ? <p className="muted small">Nenhum movimento registrado.</p> : (
@@ -2821,6 +2948,7 @@ export default function QuemMeDevePage() {
                     </div>
                   )}
                 </section>
+                ) : null}
               </div>
             </article>
           );
@@ -3193,7 +3321,7 @@ export default function QuemMeDevePage() {
         <div className="devedores-modal">
           <form
             className="devedores-modal-card devedores-modal-card-grande"
-            onSubmit={salvarLancamentoPrincipal}
+            onSubmit={salvarDivida}
           >
             <button
               type="button"
@@ -3268,271 +3396,98 @@ export default function QuemMeDevePage() {
               </details>
             </div>
 
-            {/* 1. ÁUDIO — principal */}
+            {/* 1. FALAR / FOTO */}
             <section
               style={{
-                padding: 14,
-                borderRadius: 18,
-                border: "1px solid rgba(96,165,250,.28)",
-                background:
-                  gravando
-                    ? "rgba(239,68,68,.08)"
-                    : "rgba(59,130,246,.07)",
+                padding: 12,
+                borderRadius: 16,
+                border: "1px solid rgba(96,165,250,.24)",
+                background: gravando
+                  ? "rgba(239,68,68,.08)"
+                  : "rgba(59,130,246,.06)",
                 display: "grid",
-                gap: 10,
+                gap: 9,
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <div>
                   <strong>🎤 1. Fale a dívida</strong>
-                  <p className="muted small" style={{ margin: "4px 0 0" }}>
-                    Posso preencher valor, pessoas, grupo, sua parte, forma,
-                    cartão, categoria, juros e se vai para Finanças.
-                  </p>
+                  <small className="muted" style={{ display: "block", marginTop: 2 }}>
+                    Preencho automaticamente apenas o que eu conseguir identificar.
+                  </small>
                 </div>
                 <BotaoAjudaSecao
-                  titulo="Falar a dívida"
-                  texto="Use o microfone para preencher a dívida. Você pode falar valor, pessoas, grupo, sua parte, porcentagens, forma de pagamento, cartão, categoria, juros e se o lançamento deve ir para Finanças/Histórico. Depois confira os campos antes de salvar."
+                  titulo="Falar ou usar foto"
+                  texto="Você pode falar os dados ou usar uma foto/print. Confira tudo antes de salvar."
                 />
               </div>
 
-              <button
-                type="button"
-                className={`primary-btn ${gravando ? "danger-soft" : ""}`}
-                onClick={gravando ? pararVoz : iniciarVoz}
-                disabled={!suportaVoz}
-                style={{
-                  minHeight: 52,
-                  fontSize: 15,
-                  fontWeight: 900,
-                }}
-              >
-                {gravando
-                  ? "■ Parar e preencher"
-                  : "🎙️ Começar a falar"}
-              </button>
-
-              {!suportaVoz ? (
-                <small className="muted">
-                  Seu navegador não oferece reconhecimento de voz. Use o
-                  Chrome ou preencha manualmente.
-                </small>
-              ) : null}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+                <button
+                  type="button"
+                  className={`primary-btn ${gravando ? "danger-soft" : ""}`}
+                  onClick={gravando ? pararVoz : iniciarVoz}
+                  disabled={!suportaVoz}
+                  style={{ minHeight: 44, padding: "8px 7px" }}
+                >
+                  {gravando ? "■ Parar" : "🎙️ Falar"}
+                </button>
+                <button
+                  type="button"
+                  className={`toggle-btn ${mostrarFotoLancamento ? "toggle-active" : ""}`}
+                  onClick={() => setMostrarFotoLancamento((v) => !v)}
+                  style={{ minHeight: 44, padding: "8px 7px" }}
+                >
+                  📷 Foto
+                </button>
+              </div>
 
               {textoVoz ? (
-                <div
-                  style={{
-                    padding: 10,
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,.04)",
-                  }}
-                >
+                <div style={{ padding: 8, borderRadius: 10, background: "rgba(255,255,255,.04)" }}>
                   <small className="muted">Entendi:</small>
-                  <div style={{ marginTop: 3 }}>{textoVoz}</div>
+                  <div style={{ marginTop: 2 }}>{textoVoz}</div>
                 </div>
               ) : null}
 
-              <details>
-                <summary
-                  className="toggle-btn"
-                  style={{ cursor: "pointer", width: "fit-content" }}
-                >
-                  📷 Usar foto em vez de voz
-                </summary>
-                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  <input
-                    ref={fotoImportacaoRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={lerFoto}
-                  />
-                  <input
-                    ref={cameraImportacaoRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={lerFoto}
-                  />
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 8,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="toggle-btn"
-                      onClick={() =>
-                        fotoImportacaoRef.current?.click()
-                      }
-                      disabled={lendoFoto}
-                    >
-                      🖼️ Galeria
-                    </button>
-                    <button
-                      type="button"
-                      className="toggle-btn"
-                      onClick={() =>
-                        cameraImportacaoRef.current?.click()
-                      }
-                      disabled={lendoFoto}
-                    >
-                      📷 Câmera
-                    </button>
+              {mostrarFotoLancamento ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <input ref={fotoImportacaoRef} type="file" accept="image/*" hidden onChange={lerFoto} />
+                  <input ref={cameraImportacaoRef} type="file" accept="image/*" capture="environment" hidden onChange={lerFoto} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+                    <button type="button" className="toggle-btn" onClick={() => fotoImportacaoRef.current?.click()} disabled={lendoFoto}>🖼️ Galeria</button>
+                    <button type="button" className="toggle-btn" onClick={() => cameraImportacaoRef.current?.click()} disabled={lendoFoto}>📷 Câmera</button>
                   </div>
-
-                  {lendoFoto ? (
-                    <small className="muted">
-                      Lendo foto… {progressoFoto}%
-                    </small>
-                  ) : null}
-
+                  {lendoFoto ? <small className="muted">Lendo foto… {progressoFoto}%</small> : null}
                   {rascunhosImportados.map((r) => (
-                    <div
-                      key={r.id}
-                      style={{
-                        padding: 10,
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,.04)",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <div>
-                        <strong>{r.descricao}</strong>
-                        <small
-                          className="muted"
-                          style={{ display: "block" }}
-                        >
-                          {brl(r.valor)} ·{" "}
-                          {formaLabel(r.formaPagamento)}
-                        </small>
+                    <div key={r.id} style={{ padding: 8, borderRadius: 10, background: "rgba(255,255,255,.04)", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.descricao}</strong>
+                        <small className="muted">{brl(r.valor)} · {formaLabel(r.formaPagamento)}</small>
                       </div>
-                      <button
-                        type="button"
-                        className="toggle-btn"
-                        onClick={() => aplicarRascunho(r)}
-                      >
-                        Usar
-                      </button>
+                      <button type="button" className="toggle-btn" onClick={() => aplicarRascunho(r)}>Usar</button>
                     </div>
                   ))}
                 </div>
-              </details>
+              ) : null}
             </section>
 
-            {/* 2. TIPO + VALOR */}
-            <section
-              style={{
-                padding: 14,
-                borderRadius: 18,
-                border: "1px solid rgba(255,255,255,.10)",
-                background: "rgba(255,255,255,.025)",
-                display: "grid",
-                gap: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <strong>💰 2. A dívida</strong>
+            {/* 2. EMPRÉSTIMO / DÍVIDA */}
+            <section style={{ padding: 12, borderRadius: 16, border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.025)", display: "grid", gap: 9 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <strong>💰 2. Empréstimo ou dívida</strong>
                 <BotaoAjudaSecao
-                  titulo="A dívida"
-                  texto="Escolha se eles te devem ou se você deve a eles. Informe o nome da despesa e o valor total. Esse valor é a base usada para calcular todas as partes e porcentagens."
+                  titulo="Empréstimo ou dívida"
+                  texto="Empréstimo significa que a pessoa ficou te devendo. Dívida significa que você ficou devendo à pessoa."
                 />
               </div>
 
               <div className="devedor-sentido-grid">
-                <button
-                  type="button"
-                  className={`toggle-btn ${
-                    sentido === "me_deve" ? "toggle-active" : ""
-                  }`}
-                  onClick={() => setSentido("me_deve")}
-                >
-                  Eles me devem
-                </button>
-                <button
-                  type="button"
-                  className={`toggle-btn ${
-                    sentido === "eu_devo" ? "toggle-active" : ""
-                  }`}
-                  onClick={() => setSentido("eu_devo")}
-                >
-                  Eu devo
-                </button>
+                <button type="button" className={`toggle-btn ${sentido === "me_deve" ? "toggle-active" : ""}`} onClick={() => setSentido("me_deve")}>💵 Empréstimo</button>
+                <button type="button" className={`toggle-btn ${sentido === "eu_devo" ? "toggle-active" : ""}`} onClick={() => setSentido("eu_devo")}>🧾 Dívida</button>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                  gap: 7,
-                }}
-              >
-                <button
-                  type="button"
-                  className={`toggle-btn ${
-                    modoLancamentoDivida === "lancar"
-                      ? "toggle-active"
-                      : ""
-                  }`}
-                  onClick={() => mudarModoLancamentoDivida("lancar")}
-                >
-                  ＋ Lançar
-                </button>
-                <button
-                  type="button"
-                  className={`toggle-btn ${
-                    modoLancamentoDivida === "quitar"
-                      ? "toggle-active"
-                      : ""
-                  }`}
-                  onClick={() => mudarModoLancamentoDivida("quitar")}
-                >
-                  ✓ Quitar tudo
-                </button>
-                <button
-                  type="button"
-                  className={`toggle-btn ${
-                    modoLancamentoDivida === "abater"
-                      ? "toggle-active"
-                      : ""
-                  }`}
-                  onClick={() => mudarModoLancamentoDivida("abater")}
-                >
-                  − Abater valor
-                </button>
-              </div>
-
-              {modoLancamentoDivida === "lancar" ? (
               <div className="devedor-detalhes-grid">
-                <label>
-                  O quê
-                  <input
-                    value={descricao}
-                    onChange={(e) => setDescricao(e.target.value)}
-                    placeholder="Ex.: Pizza"
-                  />
-                </label>
+                <label>O quê<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex.: Pizza" /></label>
                 <label>
                   Valor total
                   <input
@@ -3541,1629 +3496,294 @@ export default function QuemMeDevePage() {
                     onChange={(e) => {
                       const novoValorTotal = e.target.value;
                       setValorTotal(novoValorTotal);
-
                       const totalNovo = numero(novoValorTotal);
-
-                      if (
-                        euSelecionado &&
-                        String(minhaPartePercentual).trim() !== ""
-                      ) {
-                        const pctEu = Math.max(
-                          0,
-                          Math.min(
-                            100,
-                            numero(minhaPartePercentual)
-                          )
-                        );
-
-                        setMinhaParteValor(
-                          totalNovo > 0
-                            ? String(
-                                Number(
-                                  (
-                                    (totalNovo * pctEu) /
-                                    100
-                                  ).toFixed(2)
-                                )
-                              )
-                            : ""
-                        );
-                      } else if (
-                        euSelecionado &&
-                        String(minhaParteValor).trim() !== "" &&
-                        totalNovo > 0
-                      ) {
-                        setMinhaPartePercentual(
-                          String(
-                            Number(
-                              (
-                                (numero(minhaParteValor) /
-                                  totalNovo) *
-                                100
-                              ).toFixed(2)
-                            )
-                          )
-                        );
+                      if (euSelecionado && String(minhaPartePercentual).trim() !== "") {
+                        const pctEu = Math.max(0, Math.min(100, numero(minhaPartePercentual)));
+                        setMinhaParteValor(totalNovo > 0 ? String(Number(((totalNovo * pctEu) / 100).toFixed(2))) : "");
+                      } else if (euSelecionado && String(minhaParteValor).trim() !== "" && totalNovo > 0) {
+                        setMinhaPartePercentual(String(Number(((numero(minhaParteValor) / totalNovo) * 100).toFixed(2))));
                       }
                     }}
                     placeholder="0,00"
                   />
                 </label>
               </div>
-              ) : (
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    padding: 11,
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,.035)",
-                    border: "1px solid rgba(255,255,255,.08)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0,1fr))",
-                      gap: 8,
-                    }}
-                  >
-                    <div>
-                      <small className="muted">Pendente selecionado</small>
-                      <strong style={{ display: "block" }}>
-                        {brl(totalPendenteSelecionado)}
-                      </strong>
-                    </div>
-                    <div>
-                      <small className="muted">Pessoas com saldo</small>
-                      <strong style={{ display: "block" }}>
-                        {pendenciasSelecionadas.length}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {modoLancamentoDivida === "abater" ? (
-                    <label>
-                      Quanto será abatido agora
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "minmax(0,1fr) auto",
-                          gap: 7,
-                        }}
-                      >
-                        <input
-                          inputMode="decimal"
-                          value={valorDireto}
-                          onChange={(e) => setValorDireto(e.target.value)}
-                          placeholder="0,00"
-                        />
-                        <button
-                          type="button"
-                          className="toggle-btn"
-                          onClick={() =>
-                            mudarModoLancamentoDivida("quitar")
-                          }
-                          disabled={!(totalPendenteSelecionado > 0)}
-                        >
-                          Tudo
-                        </button>
-                      </div>
-                    </label>
-                  ) : (
-                    <label>
-                      Valor que será quitado
-                      <input
-                        inputMode="decimal"
-                        value={valorDireto}
-                        readOnly
-                        placeholder="Selecione a pessoa abaixo"
-                      />
-                    </label>
-                  )}
-
-                  <label>
-                    Referência
-                    <input
-                      value={descricao}
-                      onChange={(e) => setDescricao(e.target.value)}
-                      placeholder={
-                        modoLancamentoDivida === "quitar"
-                          ? "Ex.: Quitação da pizza"
-                          : "Ex.: Parte da pizza"
-                      }
-                    />
-                  </label>
-
-                  <small className="muted">
-                    {modoLancamentoDivida === "quitar"
-                      ? "Selecione uma ou mais pessoas em 3. Quem participa. O valor total pendente delas será quitado."
-                      : "Para abater somente uma parte, selecione uma pessoa em 3. Quem participa e informe quanto está pagando ou recebendo desta vez."}
-                  </small>
-                </div>
-              )}
             </section>
 
-            {/* 3. PARTICIPANTES */}
-            <section
-              style={{
-                padding: 14,
-                borderRadius: 18,
-                border: "1px solid rgba(94,234,155,.22)",
-                background: "rgba(94,234,155,.045)",
-                display: "grid",
-                gap: 14,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <div>
-                  <strong>👥 3. Quem participa</strong>
-                  <p className="muted small" style={{ margin: "4px 0 0" }}>
-                    {modoLancamentoDivida === "lancar"
-                      ? "Escolha um grupo salvo ou marque as pessoas desta dívida."
-                      : "Escolha quem está pagando ou recebendo este acerto."}
-                  </p>
-                </div>
-                <BotaoAjudaSecao
-                  titulo="Quem participa"
-                  texto="Escolha quem participa deste lançamento. Você também pode selecionar Eu. Grupos servem apenas para selecionar pessoas mais rápido; editar ou apagar um grupo não apaga dívidas já lançadas."
-                />
+            {/* PAGAMENTO */}
+            <section style={{ padding: 12, borderRadius: 16, border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.025)", display: "grid", gap: 9 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <strong>💳 Pagamento</strong>
+                <BotaoAjudaSecao titulo="Pagamento" texto="Escolha como o valor foi pago e a categoria. No crédito, informe também o cartão." />
               </div>
-
-              {/* GRUPOS SALVOS */}
-              <div
-                style={{
-                  display: "grid",
-                  gap: 8,
-                  padding: 10,
-                  borderRadius: 14,
-                  background: "rgba(255,255,255,.025)",
-                  border: "1px solid rgba(255,255,255,.07)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <strong style={{ fontSize: 13 }}>👥 Grupos salvos</strong>
-                      <BotaoAjudaSecao
-                        titulo="Grupos salvos"
-                        texto="Toque no nome para usar o grupo nesta dívida. ✏️ permite mudar o nome ou os participantes. 🗑️ apaga apenas o grupo salvo, sem apagar dívidas antigas."
-                      />
-                    </div>
-                    <small
-                      className="muted"
-                      style={{ display: "block", marginTop: 2 }}
-                    >
-                      Toque no nome para usar. ✏️ edita e 🗑️ apaga.
-                    </small>
-                  </div>
-                </div>
-
-                {grupos.length ? (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 6,
-                    }}
-                  >
-                    {grupos.map((grupo) => {
-                      const temEu = (grupo.pessoaIds || []).includes(EU_ID);
-                      const quantidade =
-                        (grupo.pessoaIds || []).filter((id) => id !== EU_ID)
-                          .length + (temEu ? 1 : 0);
-
-                      return (
-                        <div
-                          key={grupo.id}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "minmax(0, 1fr) 28px 28px",
-                            gap: 3,
-                            alignItems: "center",
-                            padding: 3,
-                            borderRadius: 9,
-                            background:
-                              editandoGrupoId === grupo.id
-                                ? "rgba(94,234,155,.10)"
-                                : "rgba(255,255,255,.025)",
-                            border:
-                              editandoGrupoId === grupo.id
-                                ? "1px solid rgba(94,234,155,.34)"
-                                : "1px solid rgba(255,255,255,.07)",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            className="toggle-btn"
-                            onClick={() => aplicarGrupo(grupo)}
-                            style={{
-                              justifyContent: "flex-start",
-                              minWidth: 0,
-                              minHeight: 30,
-                              padding: "4px 5px",
-                              fontSize: 11,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            👥 {grupo.nome} · {quantidade}
-                          </button>
-
-                          <button
-                            type="button"
-                            className="toggle-btn"
-                            onClick={() => abrirEdicaoGrupo(grupo)}
-                            title={`Editar grupo ${grupo.nome || ""}`}
-                            aria-label={`Editar grupo ${grupo.nome || ""}`}
-                            style={{
-                              width: 28,
-                              minWidth: 28,
-                              height: 28,
-                              padding: 0,
-                              fontSize: 11,
-                            }}
-                          >
-                            ✏️
-                          </button>
-
-                          <button
-                            type="button"
-                            className="toggle-btn danger-soft"
-                            onClick={() => apagarGrupoFixo(grupo)}
-                            title={`Apagar grupo ${grupo.nome || ""}`}
-                            aria-label={`Apagar grupo ${grupo.nome || ""}`}
-                            style={{
-                              width: 28,
-                              minWidth: 28,
-                              height: 28,
-                              padding: 0,
-                              fontSize: 11,
-                            }}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <small className="muted">Nenhum grupo criado ainda.</small>
-                )}
-
-                {/* EDITOR DO GRUPO: aparece imediatamente abaixo da lista */}
-                {editandoGrupoId ? (
-                  <div
-                    style={{
-                      marginTop: 2,
-                      padding: 11,
-                      borderRadius: 13,
-                      border: "1px solid rgba(94,234,155,.30)",
-                      background: "rgba(94,234,155,.065)",
-                      display: "grid",
-                      gap: 9,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                      }}
-                    >
-                      <div>
-                        <strong style={{ fontSize: 13 }}>✏️ Editar grupo</strong>
-                        <small
-                          className="muted"
-                          style={{ display: "block", marginTop: 2 }}
-                        >
-                          Mude o nome ou quem faz parte deste grupo.
-                        </small>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="toggle-btn"
-                        onClick={cancelarEdicaoGrupo}
-                        style={{ padding: "5px 8px", fontSize: 11 }}
-                      >
-                        ✕ Cancelar
-                      </button>
-                    </div>
-
-                    <label style={{ display: "grid", gap: 4 }}>
-                      <small>Nome do grupo</small>
-                      <input
-                        value={novoGrupoNome}
-                        onChange={(e) => setNovoGrupoNome(e.target.value)}
-                        placeholder="Ex.: Casa"
-                      />
-                    </label>
-
-                    <div>
-                      <small
-                        className="muted"
-                        style={{ display: "block", marginBottom: 6 }}
-                      >
-                        Participantes do grupo
-                      </small>
-
-                      <div className="devedor-grupo-pessoas">
-                        <button
-                          type="button"
-                          className={`devedor-pessoa-chip ${
-                            novoGrupoPessoaIds.includes(EU_ID) ? "ativo" : ""
-                          }`}
-                          onClick={() => alternarPessoaGrupo(EU_ID)}
-                          style={{ "--chip-accent": "#5eea9b" }}
-                        >
-                          <span>EU</span>
-                          <b>Eu</b>
-                          <em>
-                            {novoGrupoPessoaIds.includes(EU_ID) ? "✓" : "+"}
-                          </em>
-                        </button>
-
-                        {pessoas.map((p) => {
-                          const ativo = novoGrupoPessoaIds.includes(p.id);
-                          return (
-                            <button
-                              type="button"
-                              key={p.id}
-                              className={`devedor-pessoa-chip ${
-                                ativo ? "ativo" : ""
-                              }`}
-                              onClick={() => alternarPessoaGrupo(p.id)}
-                              style={{
-                                "--chip-accent": p.corCarta || "#3b82f6",
-                              }}
-                            >
-                              {p.fotoBase64 ? (
-                                <img src={p.fotoBase64} alt="" />
-                              ) : (
-                                <span>
-                                  {String(p.nome || "?")[0].toUpperCase()}
-                                </span>
-                              )}
-                              <b>{p.nome}</b>
-                              <em>{ativo ? "✓" : "+"}</em>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="primary-btn"
-                      onClick={salvarGrupoFixo}
-                    >
-                      💾 Salvar alterações do grupo
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* PARTICIPANTES DA DÍVIDA */}
-              <div
-                style={{
-                  display: "grid",
-                  gap: 9,
-                  padding: 10,
-                  borderRadius: 14,
-                  background: "rgba(255,255,255,.025)",
-                  border: "1px solid rgba(255,255,255,.07)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <strong style={{ fontSize: 13 }}>
-                        👤 Participantes desta dívida
-                      </strong>
-                      <BotaoAjudaSecao
-                        titulo="Participantes desta dívida"
-                        texto="Marque somente quem participa deste lançamento. Isso não modifica os grupos salvos. Se marcar Eu, sua parte entra na divisão."
-                      />
-                    </div>
-                    <small
-                      className="muted"
-                      style={{ display: "block", marginTop: 2 }}
-                    >
-                      “Eu” também pode fazer parte da divisão.
-                    </small>
-                  </div>
-
-                  {modoLancamentoDivida === "lancar" &&
-                  (pessoasSelecionadas.length + (euSelecionado ? 1 : 0)) >
-                    1 ? (
-                    <button
-                      type="button"
-                      className="toggle-btn"
-                      onClick={dividirRestanteIgualmente}
-                      style={{ padding: "6px 9px", fontSize: 11 }}
-                    >
-                      ⚖️ Dividir igual
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="devedor-pessoas-grid">
-                  {modoLancamentoDivida === "lancar" ? (
-                    <button
-                      type="button"
-                      className={`devedor-pessoa-chip ${
-                        euSelecionado ? "ativo" : ""
-                      }`}
-                      onClick={alternarEuSelecionado}
-                      style={{ "--chip-accent": "#5eea9b" }}
-                    >
-                      <span>EU</span>
-                      <b>{profile?.nome ? `Eu · ${profile.nome}` : "Eu"}</b>
-                      <em>{euSelecionado ? "✓" : "+"}</em>
-                    </button>
-                  ) : null}
-
-                  {pessoas.map((p) => {
-                    const ativo = pessoasSelecionadas.includes(p.id);
-                    return (
-                      <button
-                        type="button"
-                        key={p.id}
-                        className={`devedor-pessoa-chip ${
-                          ativo ? "ativo" : ""
-                        }`}
-                        onClick={() => alternarPessoaSelecionada(p.id)}
-                        style={{
-                          "--chip-accent": p.corCarta || "#3b82f6",
-                        }}
-                      >
-                        {p.fotoBase64 ? (
-                          <img src={p.fotoBase64} alt="" />
-                        ) : (
-                          <span>
-                            {String(p.nome || "?")[0].toUpperCase()}
-                          </span>
-                        )}
-                        <b>{p.nome}</b>
-                        <em>{ativo ? "✓" : "+"}</em>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* DIVISÃO */}
-              {modoLancamentoDivida === "lancar" &&
-              (pessoasSelecionadas.length || euSelecionado) ? (
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 8,
-                    padding: 10,
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,.025)",
-                    border: "1px solid rgba(255,255,255,.07)",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <strong style={{ fontSize: 13 }}>📊 Divisão da dívida</strong>
-                      <BotaoAjudaSecao
-                        titulo="Divisão da dívida"
-                        texto="Defina a porcentagem de cada participante. O total precisa fechar em 100%. Você pode preencher a sua porcentagem em Eu ou usar Dividir igual."
-                      />
-                    </div>
-                    <small
-                      className="muted"
-                      style={{ display: "block", marginTop: 2 }}
-                    >
-                      Ajuste a porcentagem de cada participante.
-                    </small>
-                  </div>
-
-                  {euSelecionado ? (
-                    <div className="devedor-percentual-item">
-                      <span>👤 Eu</span>
-                      <label>
-                        <input
-                          inputMode="decimal"
-                          value={minhaPartePercentual}
-                          onChange={(e) => {
-                            const bruto = e.target.value;
-
-                            if (
-                              bruto !== "" &&
-                              !/^\d{0,3}(?:[.,]\d{0,2})?$/.test(bruto)
-                            ) {
-                              return;
-                            }
-
-                            setMinhaPartePercentual(bruto);
-
-                            if (bruto === "") {
-                              setMinhaParteValor("");
-                              return;
-                            }
-
-                            const pct = Math.max(
-                              0,
-                              Math.min(100, numero(bruto))
-                            );
-                            const total = numero(valorTotal);
-
-                            setMinhaParteValor(
-                              total > 0
-                                ? String(
-                                    Number(
-                                      ((total * pct) / 100).toFixed(2)
-                                    )
-                                  )
-                                : ""
-                            );
-                          }}
-                          onBlur={() => {
-                            if (
-                              String(minhaPartePercentual).trim() === ""
-                            ) {
-                              return;
-                            }
-
-                            const pct = Math.max(
-                              0,
-                              Math.min(
-                                100,
-                                numero(minhaPartePercentual)
-                              )
-                            );
-
-                            setMinhaPartePercentual(String(pct));
-                          }}
-                          placeholder={`${resumoMinhaParte.percentual.toFixed(
-                            2
-                          )}% auto`}
-                        />
-                        <b>%</b>
-                      </label>
-                      <strong>{brl(resumoMinhaParte.valor)}</strong>
-                    </div>
-                  ) : null}
-
-                  {pessoasSelecionadas.map((id) => {
-                    const p = pessoas.find((x) => x.id === id);
-                    const pct = numero(percentuais[id]);
-                    const parte =
-                      numero(valorTotal) > 0
-                        ? (numero(valorTotal) * pct) / 100
-                        : 0;
-
-                    return (
-                      <div className="devedor-percentual-item" key={id}>
-                        <span>{p?.nome || "Pessoa"}</span>
-                        <label>
-                          <input
-                            inputMode="decimal"
-                            value={percentuais[id] ?? ""}
-                            onChange={(e) =>
-                              setPercentuais((atual) => ({
-                                ...atual,
-                                [id]: e.target.value,
-                              }))
-                            }
-                            placeholder="%"
-                          />
-                          <b>%</b>
-                        </label>
-                        <strong>{brl(parte)}</strong>
-                      </div>
-                    );
-                  })}
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                      gap: 7,
-                    }}
-                  >
-                    <div
-                      style={{
-                        padding: 8,
-                        borderRadius: 11,
-                        background: "rgba(255,255,255,.035)",
-                      }}
-                    >
-                      <small className="muted">Eu</small>
-                      <strong style={{ display: "block" }}>
-                        {brl(resumoMinhaParte.valor)}
-                      </strong>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: 8,
-                        borderRadius: 11,
-                        background: "rgba(255,255,255,.035)",
-                      }}
-                    >
-                      <small className="muted">Outros</small>
-                      <strong style={{ display: "block" }}>
-                        {brl(resumoMinhaParte.valorOutrasPessoas)}
-                      </strong>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: 8,
-                        borderRadius: 11,
-                        background: "rgba(255,255,255,.035)",
-                      }}
-                    >
-                      <small className="muted">Total</small>
-                      <strong
-                        style={{
-                          display: "block",
-                          color:
-                            Math.abs(
-                              resumoMinhaParte.totalPercentual - 100
-                            ) <= 0.02
-                              ? "#5eea9b"
-                              : "#ff9a9a",
-                        }}
-                      >
-                        {resumoMinhaParte.totalPercentual.toFixed(2)}%
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* CRIAR PESSOA / GRUPO NOVO */}
-              {!editandoGrupoId ? (
-                <details>
-                  <summary
-                    className="toggle-btn"
-                    style={{ cursor: "pointer", width: "fit-content" }}
-                  >
-                    ＋ Criar pessoa ou grupo
-                  </summary>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      marginTop: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        padding: 10,
-                        borderRadius: 13,
-                        background: "rgba(255,255,255,.03)",
-                        display: "grid",
-                        gap: 8,
-                      }}
-                    >
-                      <strong style={{ fontSize: 13 }}>
-                        ➕ Nova pessoa
-                      </strong>
-
-                      <div className="devedor-criar-inline-grid">
-                        <input
-                          value={novaPessoaNome}
-                          onChange={(e) => setNovaPessoaNome(e.target.value)}
-                          placeholder="Nome"
-                        />
-
-                        <label className="toggle-btn devedor-upload-label">
-                          📷 Foto
-                          <input
-                            type="file"
-                            accept="image/*"
-                            hidden
-                            onChange={(e) => escolherFotoPessoa(e, "nova")}
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          className="primary-btn"
-                          onClick={criarPessoaNoLancamento}
-                        >
-                          Adicionar
-                        </button>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: 10,
-                        borderRadius: 13,
-                        background: "rgba(255,255,255,.03)",
-                        display: "grid",
-                        gap: 8,
-                      }}
-                    >
-                      <div>
-                        <strong style={{ fontSize: 13 }}>
-                          👥 Novo grupo
-                        </strong>
-                        <small
-                          className="muted"
-                          style={{ display: "block", marginTop: 2 }}
-                        >
-                          Salve uma combinação de pessoas para usar depois.
-                        </small>
-                      </div>
-
-                      <input
-                        value={novoGrupoNome}
-                        onChange={(e) => setNovoGrupoNome(e.target.value)}
-                        placeholder="Nome do grupo. Ex.: Casa"
-                      />
-
-                      <div className="devedor-grupo-pessoas">
-                        <button
-                          type="button"
-                          className={`devedor-pessoa-chip ${
-                            novoGrupoPessoaIds.includes(EU_ID) ? "ativo" : ""
-                          }`}
-                          onClick={() => alternarPessoaGrupo(EU_ID)}
-                          style={{ "--chip-accent": "#5eea9b" }}
-                        >
-                          <span>EU</span>
-                          <b>Eu</b>
-                          <em>
-                            {novoGrupoPessoaIds.includes(EU_ID) ? "✓" : "+"}
-                          </em>
-                        </button>
-
-                        {pessoas.map((p) => {
-                          const ativo = novoGrupoPessoaIds.includes(p.id);
-
-                          return (
-                            <button
-                              type="button"
-                              key={p.id}
-                              className={`devedor-pessoa-chip ${
-                                ativo ? "ativo" : ""
-                              }`}
-                              onClick={() => alternarPessoaGrupo(p.id)}
-                              style={{
-                                "--chip-accent": p.corCarta || "#3b82f6",
-                              }}
-                            >
-                              {p.fotoBase64 ? (
-                                <img src={p.fotoBase64} alt="" />
-                              ) : (
-                                <span>
-                                  {String(p.nome || "?")[0].toUpperCase()}
-                                </span>
-                              )}
-                              <b>{p.nome}</b>
-                              <em>{ativo ? "✓" : "+"}</em>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        onClick={salvarGrupoFixo}
-                      >
-                        ＋ Salvar novo grupo
-                      </button>
-                    </div>
-                  </div>
-                </details>
-              ) : null}
-            </section>
-
-            {/* 4. PAGAMENTO / FINANÇAS */}
-            <section
-              style={{
-                padding: 14,
-                borderRadius: 18,
-                border: "1px solid rgba(255,255,255,.10)",
-                background: "rgba(255,255,255,.025)",
-                display: "grid",
-                gap: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <strong>💳 4. Pagamento</strong>
-                <BotaoAjudaSecao
-                  titulo="Pagamento"
-                  texto="Escolha PIX, dinheiro, débito, crédito ou outros. No crédito, selecione o cartão. A categoria define como o gasto será classificado quando acompanhar Finanças."
-                />
-              </div>
-
               <div className="devedor-detalhes-grid">
                 <label>
                   Forma
-                  <select
-                    value={formaPagamento}
-                    onChange={(e) => {
-                      setFormaPagamento(e.target.value);
-                      if (e.target.value !== "credito") {
-                        setCartaoId("");
-                      }
-                    }}
-                  >
-                    <option value="pix">PIX</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="debito">Débito</option>
-                    <option value="credito">Crédito</option>
-                    <option value="outros">Outros</option>
+                  <select value={formaPagamento} onChange={(e) => { setFormaPagamento(e.target.value); if (e.target.value !== "credito") setCartaoId(""); }}>
+                    <option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outros">Outros</option>
                   </select>
                 </label>
-
-                {formaPagamento === "credito" ? (
-                  <label>
-                    Cartão
-                    <select
-                      value={cartaoId}
-                      onChange={(e) => setCartaoId(e.target.value)}
-                    >
-                      <option value="">Selecione...</option>
-                      {cartoes.map((cartao) => (
-                        <option key={cartao.id} value={cartao.id}>
-                          {cartao.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-
                 <label>
                   Categoria
-                  <select
-                    value={categoriaFinanceira}
-                    onChange={(e) =>
-                      setCategoriaFinanceira(e.target.value)
-                    }
-                  >
-                    <option value="Burrice">Burrice</option>
-                    <option value="Essencial">Essencial</option>
-                    <option value="Lazer">Lazer</option>
-                    <option value="Investido">Investido</option>
+                  <select value={categoriaFinanceira} onChange={(e) => setCategoriaFinanceira(e.target.value)}>
+                    <option value="Burrice">Burrice</option><option value="Essencial">Essencial</option><option value="Lazer">Lazer</option><option value="Investido">Investido</option>
                   </select>
                 </label>
+                {formaPagamento === "credito" ? (
+                  <label>Cartão<select value={cartaoId} onChange={(e) => setCartaoId(e.target.value)}><option value="">Selecione...</option>{cartoes.map((cartao) => <option key={cartao.id} value={cartao.id}>{cartao.nome}</option>)}</select></label>
+                ) : null}
+              </div>
+            </section>
+
+            {/* 3. QUEM PARTICIPA — abre só o necessário */}
+            <section style={{ padding: 12, borderRadius: 16, border: "1px solid rgba(94,234,155,.20)", background: "rgba(94,234,155,.04)", display: "grid", gap: 9 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <div>
+                  <strong>👥 3. Quem participa</strong>
+                  <small className="muted" style={{ display: "block", marginTop: 2 }}>Abra somente a parte que você precisa.</small>
+                </div>
+                <BotaoAjudaSecao titulo="Quem participa" texto="Use Grupos para escolher várias pessoas de uma vez, Pessoas para marcar individualmente e Criar para cadastrar uma pessoa ou grupo novo." />
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,.025)",
-                  border: "1px solid rgba(255,255,255,.08)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: 8,
-                  }}
-                >
-                  <div>
-                    <strong style={{ display: "block" }}>
-                      📊 Onde este lançamento vai aparecer?
-                    </strong>
-                    <small
-                      className="muted"
-                      style={{ display: "block", marginTop: 3 }}
-                    >
-                      Escolha se ele também deve acompanhar seu dinheiro.
-                    </small>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 6 }}>
+                <button type="button" className={`toggle-btn ${painelParticipantesLancamento === "grupos" ? "toggle-active" : ""}`} onClick={() => setPainelParticipantesLancamento((v) => v === "grupos" ? "" : "grupos")}>👥 Grupos</button>
+                <button type="button" className={`toggle-btn ${painelParticipantesLancamento === "pessoas" ? "toggle-active" : ""}`} onClick={() => setPainelParticipantesLancamento((v) => v === "pessoas" ? "" : "pessoas")}>👤 Pessoas</button>
+                <button type="button" className={`toggle-btn ${painelParticipantesLancamento === "criar" ? "toggle-active" : ""}`} onClick={() => setPainelParticipantesLancamento((v) => v === "criar" ? "" : "criar")}>＋ Criar</button>
+              </div>
+
+              {painelParticipantesLancamento === "grupos" ? (
+                <div style={{ display: "grid", gap: 8, padding: 9, borderRadius: 12, background: "rgba(255,255,255,.025)" }}>
+                  <div><strong style={{ fontSize: 13 }}>👥 Grupos salvos</strong><small className="muted" style={{ display: "block" }}>Toque no nome para usar. ✏️ edita e 🗑️ apaga.</small></div>
+                  {grupos.length ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 6 }}>
+                      {grupos.map((grupo) => {
+                        const temEu = (grupo.pessoaIds || []).includes(EU_ID);
+                        const quantidade = (grupo.pessoaIds || []).filter((id) => id !== EU_ID).length + (temEu ? 1 : 0);
+                        return (
+                          <div key={grupo.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 28px 28px", gap: 3, alignItems: "center", padding: 3, borderRadius: 9, background: editandoGrupoId === grupo.id ? "rgba(94,234,155,.10)" : "rgba(255,255,255,.025)", border: editandoGrupoId === grupo.id ? "1px solid rgba(94,234,155,.34)" : "1px solid rgba(255,255,255,.07)" }}>
+                            <button type="button" className="toggle-btn" onClick={() => aplicarGrupo(grupo)} style={{ justifyContent: "flex-start", minWidth: 0, minHeight: 30, padding: "4px 5px", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>👥 {grupo.nome} · {quantidade}</button>
+                            <button type="button" className="toggle-btn" onClick={() => abrirEdicaoGrupo(grupo)} title="Editar grupo" style={{ width: 28, minWidth: 28, height: 28, padding: 0, fontSize: 11 }}>✏️</button>
+                            <button type="button" className="toggle-btn danger-soft" onClick={() => apagarGrupoFixo(grupo)} title="Apagar grupo" style={{ width: 28, minWidth: 28, height: 28, padding: 0, fontSize: 11 }}>🗑️</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : <small className="muted">Nenhum grupo criado ainda.</small>}
+
+                  {editandoGrupoId ? (
+                    <div style={{ padding: 10, borderRadius: 12, border: "1px solid rgba(94,234,155,.28)", background: "rgba(94,234,155,.055)", display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}><strong>✏️ Editar grupo</strong><button type="button" className="toggle-btn" onClick={cancelarEdicaoGrupo}>✕</button></div>
+                      <label>Nome do grupo<input value={novoGrupoNome} onChange={(e) => setNovoGrupoNome(e.target.value)} /></label>
+                      <div className="devedor-grupo-pessoas">
+                        <button type="button" className={`devedor-pessoa-chip ${novoGrupoPessoaIds.includes(EU_ID) ? "ativo" : ""}`} onClick={() => alternarPessoaGrupo(EU_ID)} style={{ "--chip-accent": "#5eea9b" }}><span>EU</span><b>Eu</b><em>{novoGrupoPessoaIds.includes(EU_ID) ? "✓" : "+"}</em></button>
+                        {pessoas.map((p) => { const ativo = novoGrupoPessoaIds.includes(p.id); return <button type="button" key={p.id} className={`devedor-pessoa-chip ${ativo ? "ativo" : ""}`} onClick={() => alternarPessoaGrupo(p.id)} style={{ "--chip-accent": p.corCarta || "#3b82f6" }}>{p.fotoBase64 ? <img src={p.fotoBase64} alt="" /> : <span>{String(p.nome || "?")[0].toUpperCase()}</span>}<b>{p.nome}</b><em>{ativo ? "✓" : "+"}</em></button>; })}
+                      </div>
+                      <button type="button" className="primary-btn" onClick={salvarGrupoFixo}>💾 Salvar alterações</button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {painelParticipantesLancamento === "pessoas" ? (
+                <div style={{ display: "grid", gap: 9, padding: 9, borderRadius: 12, background: "rgba(255,255,255,.025)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <div><strong style={{ fontSize: 13 }}>👤 Participantes desta dívida</strong><small className="muted" style={{ display: "block" }}>“Eu” também pode participar.</small></div>
+                    {(pessoasSelecionadas.length + (euSelecionado ? 1 : 0)) > 1 ? <button type="button" className="toggle-btn" onClick={dividirRestanteIgualmente}>⚖️ Dividir igual</button> : null}
                   </div>
-                  <BotaoAjudaSecao
-                    titulo="Histórico e Finanças"
-                    texto="Acertos + Finanças + Histórico faz o movimento acompanhar seu dinheiro. Somente em Acertos mantém o registro apenas entre pessoas. Reembolsos continuam identificados como acerto e não viram receita normal."
-                  />
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 8,
-                  }}
-                >
-                  <button
-                    type="button"
-                    className={`toggle-btn ${
-                      integrarFinanceiro ? "toggle-active" : ""
-                    }`}
-                    onClick={() => setIntegrarFinanceiro(true)}
-                    aria-pressed={integrarFinanceiro}
-                    style={{
-                      minHeight: 54,
-                      whiteSpace: "normal",
-                      lineHeight: 1.25,
-                    }}
-                  >
-                    ✓ Acertos + Finanças + Histórico
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`toggle-btn ${
-                      !integrarFinanceiro ? "toggle-active" : ""
-                    }`}
-                    onClick={() => setIntegrarFinanceiro(false)}
-                    aria-pressed={!integrarFinanceiro}
-                    style={{
-                      minHeight: 54,
-                      whiteSpace: "normal",
-                      lineHeight: 1.25,
-                    }}
-                  >
-                    ○ Somente em Acertos
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    padding: "9px 10px",
-                    borderRadius: 12,
-                    background: integrarFinanceiro
-                      ? "rgba(94,234,155,.07)"
-                      : "rgba(255,255,255,.035)",
-                    border: integrarFinanceiro
-                      ? "1px solid rgba(94,234,155,.18)"
-                      : "1px solid rgba(255,255,255,.07)",
-                  }}
-                >
-                  <small className="muted">
-                    {integrarFinanceiro
-                      ? "✓ Também será usado no Histórico e nos cálculos de Finanças."
-                      : "○ Ficará registrado apenas em Acertos e não alterará Finanças nem Histórico."}
-                  </small>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                }}
-              >
-                <button
-                  type="button"
-                  className="toggle-btn"
-                  onClick={() =>
-                    setMostrarMaisLancamento((v) => !v)
-                  }
-                  style={{ flex: 1 }}
-                >
-                  {mostrarMaisLancamento
-                    ? "▲ Fechar mais opções"
-                    : "＋ Mais opções"}
-                </button>
-                <BotaoAjudaSecao
-                  titulo="Mais opções"
-                  texto="Use esta parte quando precisar informar de onde veio a dívida, juros, período dos juros, data, hora ou observação."
-                />
-              </div>
-
-              {mostrarMaisLancamento ? (
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    paddingTop: 4,
-                  }}
-                >
-                  <div className="devedor-detalhes-grid">
-                    <label>
-                      De onde
-                      <input
-                        value={deOnde}
-                        onChange={(e) =>
-                          setDeOnde(e.target.value)
-                        }
-                        placeholder="Ex.: Restaurante"
-                      />
-                    </label>
-                    {modoLancamentoDivida === "lancar" ? (
-                      <>
-                        <label>
-                          Juros (%)
-                          <input
-                            inputMode="decimal"
-                            value={taxaJuros}
-                            onChange={(e) =>
-                              setTaxaJuros(e.target.value)
-                            }
-                            placeholder="0"
-                          />
-                        </label>
-                        <label>
-                          Juros por
-                          <select
-                            value={unidadeJuros}
-                            onChange={(e) =>
-                              setUnidadeJuros(e.target.value)
-                            }
-                          >
-                            <option value="hora">Hora</option>
-                            <option value="dia">Dia</option>
-                            <option value="mes">Mês</option>
-                            <option value="ano">Ano</option>
-                          </select>
-                        </label>
-                      </>
-                    ) : null}
-                    <label>
-                      Data e hora
-                      <input
-                        type="datetime-local"
-                        value={dataHora}
-                        onChange={(e) =>
-                          setDataHora(e.target.value)
-                        }
-                      />
-                    </label>
+                  <div className="devedor-pessoas-grid">
+                    <button type="button" className={`devedor-pessoa-chip ${euSelecionado ? "ativo" : ""}`} onClick={alternarEuSelecionado} style={{ "--chip-accent": "#5eea9b" }}><span>EU</span><b>{profile?.nome ? `Eu · ${profile.nome}` : "Eu"}</b><em>{euSelecionado ? "✓" : "+"}</em></button>
+                    {pessoas.map((p) => { const ativo = pessoasSelecionadas.includes(p.id); return <button type="button" key={p.id} className={`devedor-pessoa-chip ${ativo ? "ativo" : ""}`} onClick={() => alternarPessoaSelecionada(p.id)} style={{ "--chip-accent": p.corCarta || "#3b82f6" }}>{p.fotoBase64 ? <img src={p.fotoBase64} alt="" /> : <span>{String(p.nome || "?")[0].toUpperCase()}</span>}<b>{p.nome}</b><em>{ativo ? "✓" : "+"}</em></button>; })}
                   </div>
 
-                  <label>
-                    Observação
-                    <textarea
-                      rows="3"
-                      value={observacao}
-                      onChange={(e) =>
-                        setObservacao(e.target.value)
-                      }
-                      placeholder="Opcional"
-                    />
-                  </label>
+                  {pessoasSelecionadas.length || euSelecionado ? (
+                    <div style={{ display: "grid", gap: 7, paddingTop: 4 }}>
+                      <strong style={{ fontSize: 13 }}>📊 Divisão da dívida</strong>
+                      {euSelecionado ? (
+                        <div className="devedor-percentual-item"><span>👤 Eu</span><label><input inputMode="decimal" value={minhaPartePercentual} onChange={(e) => { const bruto = e.target.value; if (bruto !== "" && !/^\d{0,3}(?:[.,]\d{0,2})?$/.test(bruto)) return; setMinhaPartePercentual(bruto); if (bruto === "") { setMinhaParteValor(""); return; } const pct = Math.max(0, Math.min(100, numero(bruto))); const total = numero(valorTotal); setMinhaParteValor(total > 0 ? String(Number(((total * pct) / 100).toFixed(2))) : ""); }} placeholder={`${resumoMinhaParte.percentual.toFixed(2)}% auto`} /><b>%</b></label><strong>{brl(resumoMinhaParte.valor)}</strong></div>
+                      ) : null}
+                      {pessoasSelecionadas.map((id) => { const p = pessoas.find((x) => x.id === id); const pct = numero(percentuais[id]); const parte = numero(valorTotal) > 0 ? (numero(valorTotal) * pct) / 100 : 0; return <div className="devedor-percentual-item" key={id}><span>{p?.nome || "Pessoa"}</span><label><input inputMode="decimal" value={percentuais[id] ?? ""} onChange={(e) => setPercentuais((atual) => ({ ...atual, [id]: e.target.value }))} placeholder="%" /><b>%</b></label><strong>{brl(parte)}</strong></div>; })}
+                      <small className="muted">Total da divisão: <b>{resumoMinhaParte.totalPercentual.toFixed(2)}%</b></small>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {painelParticipantesLancamento === "criar" ? (
+                <div style={{ display: "grid", gap: 10, padding: 9, borderRadius: 12, background: "rgba(255,255,255,.025)" }}>
+                  <div style={{ display: "grid", gap: 7 }}><strong>➕ Nova pessoa</strong><div className="devedor-criar-inline-grid"><input value={novaPessoaNome} onChange={(e) => setNovaPessoaNome(e.target.value)} placeholder="Nome" /><label className="toggle-btn devedor-upload-label">📷 Foto<input type="file" accept="image/*" hidden onChange={(e) => escolherFotoPessoa(e, "nova")} /></label><button type="button" className="primary-btn" onClick={criarPessoaNoLancamento}>Adicionar</button></div></div>
+                  <div style={{ display: "grid", gap: 7, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,.08)" }}><strong>👥 Novo grupo</strong><input value={novoGrupoNome} onChange={(e) => setNovoGrupoNome(e.target.value)} placeholder="Nome do grupo" /><div className="devedor-grupo-pessoas"><button type="button" className={`devedor-pessoa-chip ${novoGrupoPessoaIds.includes(EU_ID) ? "ativo" : ""}`} onClick={() => alternarPessoaGrupo(EU_ID)} style={{ "--chip-accent": "#5eea9b" }}><span>EU</span><b>Eu</b><em>{novoGrupoPessoaIds.includes(EU_ID) ? "✓" : "+"}</em></button>{pessoas.map((p) => { const ativo = novoGrupoPessoaIds.includes(p.id); return <button type="button" key={p.id} className={`devedor-pessoa-chip ${ativo ? "ativo" : ""}`} onClick={() => alternarPessoaGrupo(p.id)} style={{ "--chip-accent": p.corCarta || "#3b82f6" }}>{p.fotoBase64 ? <img src={p.fotoBase64} alt="" /> : <span>{String(p.nome || "?")[0].toUpperCase()}</span>}<b>{p.nome}</b><em>{ativo ? "✓" : "+"}</em></button>; })}</div><button type="button" className="primary-btn" onClick={salvarGrupoFixo}>＋ Salvar grupo</button></div>
                 </div>
               ) : null}
             </section>
 
-            <div
-              style={{
-                padding: 12,
-                borderRadius: 16,
-                background: "rgba(255,255,255,.035)",
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0,1fr))",
-                gap: 8,
-                textAlign: "center",
-              }}
-            >
-              {modoLancamentoDivida === "lancar" ? (
-                <>
-                  <div>
-                    <small className="muted">Total</small>
-                    <strong style={{ display: "block" }}>
-                      {brl(numero(valorTotal))}
-                    </strong>
-                  </div>
-                  <div>
-                    <small className="muted">👤 Eu</small>
-                    <strong style={{ display: "block" }}>
-                      {brl(resumoMinhaParte.valor)}
-                    </strong>
-                  </div>
-                  <div>
-                    <small className="muted">
-                      {sentido === "me_deve"
-                        ? "A receber"
-                        : "A pagar"}
-                    </small>
-                    <strong style={{ display: "block" }}>
-                      {brl(
-                        (numero(valorTotal) * somaPercentuais) /
-                          100
-                      )}
-                    </strong>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <small className="muted">Pendente</small>
-                    <strong style={{ display: "block" }}>
-                      {brl(totalPendenteSelecionado)}
-                    </strong>
-                  </div>
-                  <div>
-                    <small className="muted">Abatendo agora</small>
-                    <strong style={{ display: "block" }}>
-                      {brl(
-                        modoLancamentoDivida === "quitar"
-                          ? totalPendenteSelecionado
-                          : Math.min(
-                              numero(valorDireto),
-                              totalPendenteSelecionado
-                            )
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <small className="muted">Vai restar</small>
-                    <strong style={{ display: "block" }}>
-                      {brl(
-                        Math.max(
-                          0,
-                          totalPendenteSelecionado -
-                            (modoLancamentoDivida === "quitar"
-                              ? totalPendenteSelecionado
-                              : numero(valorDireto))
-                        )
-                      )}
-                    </strong>
-                  </div>
-                </>
-              )}
+            <button type="button" className="toggle-btn" onClick={() => setMostrarDestinoFinanceiroModal(true)} style={{ minHeight: 44, width: "100%", justifyContent: "space-between" }}>
+              <span>📊 Onde este lançamento vai aparecer?</span>
+              <b>{integrarFinanceiro ? "Finanças + Histórico" : "Só Acertos"}</b>
+            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <button type="button" className="toggle-btn" onClick={() => setMostrarMaisLancamento((v) => !v)} style={{ flex: 1 }}>{mostrarMaisLancamento ? "▲ Fechar mais opções" : "＋ Mais opções"}</button>
+              <BotaoAjudaSecao titulo="Mais opções" texto="Use para informar de onde veio a dívida, juros, data, hora ou observação." />
             </div>
+
+            {mostrarMaisLancamento ? (
+              <div style={{ display: "grid", gap: 9, padding: 10, borderRadius: 12, background: "rgba(255,255,255,.025)" }}>
+                <div className="devedor-detalhes-grid"><label>De onde<input value={deOnde} onChange={(e) => setDeOnde(e.target.value)} placeholder="Ex.: Restaurante" /></label><label>Juros (%)<input inputMode="decimal" value={taxaJuros} onChange={(e) => setTaxaJuros(e.target.value)} placeholder="0" /></label><label>Juros por<select value={unidadeJuros} onChange={(e) => setUnidadeJuros(e.target.value)}><option value="hora">Hora</option><option value="dia">Dia</option><option value="mes">Mês</option><option value="ano">Ano</option></select></label><label>Data e hora<input type="datetime-local" value={dataHora} onChange={(e) => setDataHora(e.target.value)} /></label></div>
+                <label>Observação<textarea rows="3" value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Opcional" /></label>
+              </div>
+            ) : null}
 
             <button
               className="primary-btn devedor-salvar-final"
               type="submit"
               style={{ minHeight: 52, fontSize: 15 }}
             >
-              {modoLancamentoDivida === "lancar"
-                ? "Salvar dívida"
-                : modoLancamentoDivida === "quitar"
-                  ? "✓ Quitar selecionado(s)"
-                  : "− Registrar abatimento"}
+              Salvar dívida
             </button>
           </form>
         </div>
       ) : null}
 
-      {modal === "acerto" ? (
-        <div className="devedores-modal">
-          <form className="devedores-modal-card" onSubmit={salvarAcerto}>
-            <button type="button" className="fechar" onClick={fecharModal}>×</button>
-            <h3>{sentido === "eu_devo" ? "Eu paguei" : "Pessoa me pagou"}</h3>
-            <p className="muted small">
-              {sentido === "eu_devo"
-                ? "Se você enviar para Histórico/Finanças, este pagamento vira despesa porque o dinheiro saiu agora."
-                : "Se você enviar para Histórico/Finanças, este valor entra no saldo como reembolso, sem virar receita normal."}
-            </p>
-
-            <section className="devedor-accordion">
-              <button
-                type="button"
-                className={`devedor-accordion-trigger ${secaoImportacaoAberta ? "aberto" : ""}`}
-                onClick={() => setSecaoImportacaoAberta((v) => !v)}
-              >
-                <span>
-                  <b>📷🎤 Lançar por foto ou áudio</b>
-                  <small>Cria um rascunho para você conferir antes de registrar.</small>
-                </span>
-                <em>{secaoImportacaoAberta ? "▲" : "▼"}</em>
-              </button>
-
-              {secaoImportacaoAberta ? (
-                <div className="devedor-accordion-body">
-                  <input
-                    ref={fotoImportacaoRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={lerFoto}
-                  />
-                  <input
-                    ref={cameraImportacaoRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={lerFoto}
-                  />
-
-                  <div className="devedores-importacao-grid">
-                    <button type="button" className="devedor-import-btn" onClick={gravando ? pararVoz : iniciarVoz}>
-                      <span>{gravando ? "🔴" : "🎤"}</span>
-                      <div>
-                        <strong>{gravando ? "Estou ouvindo..." : "Lançar por voz"}</strong>
-                        <small>Ex.: João me pagou 40 reais no PIX</small>
-                      </div>
-                    </button>
-
-                    <button type="button" className="devedor-import-btn" onClick={() => fotoImportacaoRef.current?.click()} disabled={lendoFoto}>
-                      <span>🖼️</span>
-                      <div><strong>Escolher foto/print</strong><small>Ler um comprovante ou notificação</small></div>
-                    </button>
-
-                    <button type="button" className="devedor-import-btn" onClick={() => cameraImportacaoRef.current?.click()} disabled={lendoFoto}>
-                      <span>📷</span>
-                      <div><strong>Tirar foto agora</strong><small>Abrir a câmera</small></div>
-                    </button>
-                  </div>
-
-                  {gravando && textoVoz ? <div className="devedor-voz-texto">“{textoVoz}”</div> : null}
-                  {lendoFoto ? (
-                    <div className="devedor-leitura">
-                      <strong>🔎 Lendo a foto… {progressoFoto}%</strong>
-                      <div><span style={{ width: `${progressoFoto}%` }} /></div>
-                    </div>
-                  ) : null}
-
-                  {rascunhosImportados.length ? (
-                    <div className="devedor-rascunhos">
-                      <div className="devedor-rascunhos-topo">
-                        <strong>Rascunhos para conferir</strong>
-                        <button type="button" className="toggle-btn" onClick={() => setRascunhosImportados([])}>Limpar</button>
-                      </div>
-                      {rascunhosImportados.map((r) => (
-                        <div className="devedor-rascunho" key={r.id}>
-                          <div>
-                            <small>{r.origem === "foto" ? "📷 Foto" : "🎤 Voz"}</small>
-                            <strong>{r.descricao}</strong>
-                            <span>{brl(r.valor)} · {formaLabel(r.formaPagamento)}</span>
-                          </div>
-                          <div className="devedor-rascunho-acoes">
-                            <button type="button" className="primary-btn" onClick={() => aplicarRascunho(r)}>Usar</button>
-                            <button type="button" className="toggle-btn" onClick={() => setRascunhosImportados((a) => a.filter((x) => x.id !== r.id))}>×</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-
-            <label>Valor<input inputMode="decimal" value={valorDireto} onChange={(e) => setValorDireto(e.target.value)} /></label>
-            <label>Referência<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex.: Parte da pizza" /></label>
-            <label>De onde / para onde<input value={deOnde} onChange={(e) => setDeOnde(e.target.value)} /></label>
-
+      {typeof document !== "undefined" && mostrarDestinoFinanceiroModal
+        ? createPortal(
             <div
-              style={{
-                padding: 12,
-                borderRadius: 14,
-                border: "1px solid rgba(96,165,250,.25)",
-                background: "rgba(59,130,246,.06)",
-                display: "grid",
-                gap: 10,
-              }}
+              className="devedores-modal"
+              onClick={() => setMostrarDestinoFinanceiroModal(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 2147483645 }}
             >
-              <strong>📊 Enviar também para Histórico e Finanças?</strong>
-              <div className="devedor-sentido-grid">
-                <button
-                  type="button"
-                  className={`toggle-btn ${integrarFinanceiro ? "toggle-active" : ""}`}
-                  onClick={() => setIntegrarFinanceiro(true)}
-                >
-                  ✓ Sim
-                </button>
-                <button
-                  type="button"
-                  className={`toggle-btn ${!integrarFinanceiro ? "toggle-active" : ""}`}
-                  onClick={() => setIntegrarFinanceiro(false)}
-                >
-                  Não, só Acertos
-                </button>
+              <div className="devedores-modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(440px, 100%)" }}>
+                <button type="button" className="fechar" onClick={() => setMostrarDestinoFinanceiroModal(false)}>×</button>
+                <h3>📊 Onde este lançamento vai aparecer?</h3>
+                <p className="muted small">Escolha se ele também deve acompanhar seu dinheiro.</p>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <button type="button" className={`toggle-btn ${integrarFinanceiro ? "toggle-active" : ""}`} onClick={() => setIntegrarFinanceiro(true)}>✓ Acertos + Finanças + Histórico</button>
+                  <button type="button" className={`toggle-btn ${!integrarFinanceiro ? "toggle-active" : ""}`} onClick={() => setIntegrarFinanceiro(false)}>○ Somente em Acertos</button>
+                </div>
+                <div style={{ marginTop: 10, padding: 10, borderRadius: 12, background: "rgba(255,255,255,.035)" }}>
+                  <small className="muted">{integrarFinanceiro ? "✓ Também será usado no Histórico e nos cálculos de Finanças." : "○ Ficará apenas em Acertos e não alterará Finanças nem Histórico."}</small>
+                </div>
+                <button type="button" className="primary-btn" style={{ width: "100%", marginTop: 12 }} onClick={() => setMostrarDestinoFinanceiroModal(false)}>Concluir</button>
               </div>
+            </div>,
+            document.body
+          )
+        : null}
 
-              {integrarFinanceiro ? (
-                <>
-                  <label>
-                    Categoria
-                    <select
-                      value={categoriaFinanceira}
-                      onChange={(e) => setCategoriaFinanceira(e.target.value)}
-                    >
-                      <option value="Essencial">Essencial</option>
-                      <option value="Lazer">Lazer</option>
-                      <option value="Burrice">Burrice</option>
-                      <option value="Investido">Investido</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Forma
-                    <select
-                      value={formaPagamento}
-                      onChange={(e) => {
-                        setFormaPagamento(e.target.value);
-                        if (e.target.value !== "credito") setCartaoId("");
-                      }}
-                    >
-                      <option value="pix">PIX</option>
-                      <option value="dinheiro">Dinheiro</option>
-                      <option value="debito">Débito</option>
-                      <option value="credito">Crédito</option>
-                      <option value="outros">Outros</option>
-                    </select>
-                  </label>
-
-                  {formaPagamento === "credito" ? (
-                    <label>
-                      Cartão
-                      <select
-                        value={cartaoId}
-                        onChange={(e) => setCartaoId(e.target.value)}
-                      >
-                        <option value="">Selecione o cartão...</option>
-                        {cartoes.map((cartao) => (
-                          <option key={cartao.id} value={cartao.id}>
-                            {cartao.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                </>
-              ) : (
-                <p className="muted small" style={{ margin: 0 }}>
-                  Este acerto ficará somente na ficha da pessoa e não mudará o saldo das Finanças.
-                </p>
-              )}
-            </div>
-
-            {!integrarFinanceiro ? (
-              <label>Forma registrada em Acertos<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outros">Outros</option></select></label>
-            ) : null}
-
-            <label>Data e hora<input type="datetime-local" value={dataHora} onChange={(e) => setDataHora(e.target.value)} /></label>
-            <label>Observação<textarea rows="3" value={observacao} onChange={(e) => setObservacao(e.target.value)} /></label>
-            <button className="primary-btn" type="submit">Registrar acerto</button>
-          </form>
-        </div>
-      ) : null}
-
-      {modal === "transferir-divida" ? (() => {
-        const divida = lancamentos.find(
-          (item) => item.id === transferindoLancamentoId
-        );
-        const pessoaOrigem = pessoas.find(
-          (pessoa) => pessoa.id === divida?.pessoaId
-        );
-        const pessoaDestino = pessoas.find(
-          (pessoa) => pessoa.id === transferenciaPessoaDestinoId
-        );
-        const valorAtual = numero(divida?.valor);
-        const valorTransferir =
-          transferenciaModo === "total"
-            ? valorAtual
-            : Math.min(valorAtual, numero(transferenciaValor));
-        const valorRestante = Math.max(0, valorAtual - valorTransferir);
-        const destinosDisponiveis = pessoas.filter(
-          (pessoa) => pessoa.id !== divida?.pessoaId
-        );
+      {modal === "acerto" ? (() => {
+        const extratoAtual = extratos.find((item) => item.pessoa.id === pessoaId);
+        const pendenteReceber = extratoAtual?.saldoRealMeDevem || 0;
+        const pendentePagar = extratoAtual?.saldoRealEuDevo || 0;
+        const pendenteAtual = sentido === "eu_devo" ? pendentePagar : pendenteReceber;
 
         return (
           <div className="devedores-modal">
-            <form
-              className="devedores-modal-card"
-              onSubmit={salvarTransferenciaDivida}
-            >
-              <button
-                type="button"
-                className="fechar"
-                onClick={fecharModal}
-              >
-                ×
-              </button>
+            <form className="devedores-modal-card" onSubmit={salvarAcerto}>
+              <button type="button" className="fechar" onClick={fecharModal}>×</button>
+              <h3>✓ Quitar</h3>
+              <p className="muted small">Quite tudo de uma vez ou registre somente uma parte.</p>
 
-              <h3>↔ Transferir dívida</h3>
-
-              {divida ? (
-                <div
-                  className="card"
-                  style={{
-                    marginBottom: 12,
-                    padding: 12,
-                    display: "grid",
-                    gap: 5,
-                  }}
-                >
-                  <small className="muted">Dívida atual</small>
-                  <strong>{divida.descricao || "Sem descrição"}</strong>
-                  <span>
-                    {pessoaOrigem?.nome || "Pessoa"} · {brl(valorAtual)}
-                  </span>
-                  <small className="muted">
-                    {divida.sentido === "eu_devo"
-                      ? "Você deve este valor."
-                      : "Esta pessoa te deve este valor."}
-                  </small>
+              {pendenteReceber > 0 && pendentePagar > 0 ? (
+                <div className="devedor-sentido-grid">
+                  <button type="button" className={`toggle-btn ${sentido === "me_deve" ? "toggle-active" : ""}`} onClick={() => mudarSentidoQuitacao("me_deve")}>Receber · {brl(pendenteReceber)}</button>
+                  <button type="button" className={`toggle-btn ${sentido === "eu_devo" ? "toggle-active" : ""}`} onClick={() => mudarSentidoQuitacao("eu_devo")}>Pagar · {brl(pendentePagar)}</button>
                 </div>
               ) : null}
 
-              {destinosDisponiveis.length ? (
-                <>
-                  <label>
-                    Transferir para
-                    <select
-                      value={transferenciaPessoaDestinoId}
-                      onChange={(e) =>
-                        setTransferenciaPessoaDestinoId(e.target.value)
-                      }
-                    >
-                      <option value="">Escolha a pessoa</option>
-                      {destinosDisponiveis.map((pessoa) => (
-                        <option key={pessoa.id} value={pessoa.id}>
-                          {pessoa.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+                <button type="button" className={`toggle-btn ${modoLancamentoDivida === "quitar" ? "toggle-active" : ""}`} onClick={() => mudarModoQuitacao("quitar")}>✓ Quitar tudo</button>
+                <button type="button" className={`toggle-btn ${modoLancamentoDivida === "abater" ? "toggle-active" : ""}`} onClick={() => mudarModoQuitacao("abater")}>− Abater valor</button>
+              </div>
 
-                  <div className="devedor-sentido-grid">
-                    <button
-                      type="button"
-                      className={`toggle-btn ${
-                        transferenciaModo === "total"
-                          ? "toggle-active"
-                          : ""
-                      }`}
-                      onClick={() => {
-                        setTransferenciaModo("total");
-                        setTransferenciaValor(
-                          String(valorAtual.toFixed(2))
-                        );
-                      }}
-                    >
-                      Dívida toda
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`toggle-btn ${
-                        transferenciaModo === "parte"
-                          ? "toggle-active"
-                          : ""
-                      }`}
-                      onClick={() => {
-                        setTransferenciaModo("parte");
-                        if (
-                          !numero(transferenciaValor) ||
-                          numero(transferenciaValor) >= valorAtual
-                        ) {
-                          setTransferenciaValor(
-                            String((valorAtual / 2).toFixed(2))
-                          );
-                        }
-                      }}
-                    >
-                      Só uma parte
-                    </button>
+              <div style={{ padding: 10, borderRadius: 12, background: "rgba(255,255,255,.035)", display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span className="muted">Pendente</span><strong>{brl(pendenteAtual)}</strong></div>
+                <label>
+                  {modoLancamentoDivida === "quitar" ? "Valor da quitação" : "Quanto será abatido agora"}
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 7 }}>
+                    <input inputMode="decimal" value={valorDireto} readOnly={modoLancamentoDivida === "quitar"} onChange={(e) => setValorDireto(e.target.value)} placeholder="0,00" />
+                    {modoLancamentoDivida === "abater" ? <button type="button" className="toggle-btn" onClick={() => setValorDireto(String(Number(pendenteAtual.toFixed(2))))}>Tudo</button> : null}
                   </div>
+                </label>
+                {modoLancamentoDivida === "abater" ? <small className="muted">Depois deste pagamento restará {brl(Math.max(0, pendenteAtual - numero(valorDireto)))}.</small> : null}
+              </div>
 
-                  {transferenciaModo === "parte" ? (
-                    <label>
-                      Quanto transferir
-                      <input
-                        inputMode="decimal"
-                        value={transferenciaValor}
-                        onChange={(e) =>
-                          setTransferenciaValor(e.target.value)
-                        }
-                        placeholder="0,00"
-                      />
-                      <small className="muted">
-                        Máximo: {brl(valorAtual)}
-                      </small>
-                    </label>
-                  ) : null}
+              <label>Referência<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={modoLancamentoDivida === "quitar" ? "Ex.: Quitação da pizza" : "Ex.: Parte da pizza"} /></label>
 
-                  <div
-                    className="card"
-                    style={{
-                      marginTop: 2,
-                      padding: 12,
-                      display: "grid",
-                      gap: 7,
-                    }}
-                  >
-                    <strong>Prévia</strong>
+              <div className="devedor-detalhes-grid">
+                <label>Forma<select value={formaPagamento} onChange={(e) => { setFormaPagamento(e.target.value); if (e.target.value !== "credito") setCartaoId(""); }}><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outros">Outros</option></select></label>
+                <label>Categoria<select value={categoriaFinanceira} onChange={(e) => setCategoriaFinanceira(e.target.value)}><option value="Essencial">Essencial</option><option value="Lazer">Lazer</option><option value="Burrice">Burrice</option><option value="Investido">Investido</option></select></label>
+                {formaPagamento === "credito" ? <label>Cartão<select value={cartaoId} onChange={(e) => setCartaoId(e.target.value)}><option value="">Selecione...</option>{cartoes.map((cartao) => <option key={cartao.id} value={cartao.id}>{cartao.nome}</option>)}</select></label> : null}
+              </div>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <span>
-                        {pessoaOrigem?.nome || "Pessoa atual"} fica com
-                      </span>
-                      <b>{brl(valorRestante)}</b>
-                    </div>
+              <button type="button" className="toggle-btn" onClick={() => setMostrarDestinoFinanceiroModal(true)} style={{ width: "100%", justifyContent: "space-between" }}><span>📊 Onde este acerto vai aparecer?</span><b>{integrarFinanceiro ? "Finanças + Histórico" : "Só Acertos"}</b></button>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <span>
-                        {pessoaDestino?.nome || "Nova pessoa"} recebe
-                      </span>
-                      <b>{brl(valorTransferir)}</b>
-                    </div>
+              <details>
+                <summary className="toggle-btn" style={{ cursor: "pointer", width: "100%" }}>＋ Mais opções</summary>
+                <div style={{ display: "grid", gap: 8, marginTop: 8 }}><label>De onde / para onde<input value={deOnde} onChange={(e) => setDeOnde(e.target.value)} /></label><label>Data e hora<input type="datetime-local" value={dataHora} onChange={(e) => setDataHora(e.target.value)} /></label><label>Observação<textarea rows="3" value={observacao} onChange={(e) => setObservacao(e.target.value)} /></label></div>
+              </details>
 
-                    <small className="muted">
-                      A transferência não cria uma nova despesa no
-                      Histórico geral.
-                    </small>
+              <button className="primary-btn" type="submit">{modoLancamentoDivida === "quitar" ? "✓ Quitar dívida" : "− Registrar abatimento"}</button>
+            </form>
+          </div>
+        );
+      })() : null}
+
+      {modal === "transferir-divida" ? (() => {
+        const divida = lancamentos.find((item) => item.id === transferindoLancamentoId);
+        const pessoaOrigem = pessoas.find((pessoa) => pessoa.id === divida?.pessoaId);
+        const valorAtual = numero(divida?.valor);
+        const valorTransferir = transferenciaModo === "total" ? valorAtual : Math.min(valorAtual, numero(transferenciaValor));
+        const destinosDisponiveis = pessoas.filter((pessoa) => pessoa.id !== divida?.pessoaId);
+        const partesPreview = dividirValorEntreDestinos(valorTransferir, transferenciaPessoaDestinoIds);
+        const valorRestante = Math.max(0, valorAtual - valorTransferir);
+
+        return (
+          <div className="devedores-modal">
+            <form className="devedores-modal-card" onSubmit={salvarTransferenciaDivida}>
+              <button type="button" className="fechar" onClick={fecharModal}>×</button>
+              <h3>↔ Transferir / dividir dívida</h3>
+              <p className="muted small">Passe a dívida para uma pessoa, várias pessoas ao mesmo tempo ou use um grupo salvo.</p>
+
+              <div className="card" style={{ padding: 10, display: "grid", gap: 4 }}><small className="muted">Dívida atual</small><strong>{pessoaOrigem?.nome || "Pessoa"} · {brl(valorAtual)}</strong></div>
+
+              {grupos.length ? (
+                <div style={{ display: "grid", gap: 7 }}>
+                  <strong style={{ fontSize: 13 }}>👥 Usar um grupo</strong>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+                    {grupos.map((grupo) => (
+                      <button key={grupo.id} type="button" className="toggle-btn" onClick={() => aplicarGrupoTransferencia(grupo, divida?.pessoaId)}>👥 {grupo.nome}</button>
+                    ))}
                   </div>
-
-                  <button
-                    className="primary-btn"
-                    type="submit"
-                    disabled={
-                      !transferenciaPessoaDestinoId ||
-                      !(valorTransferir > 0) ||
-                      valorTransferir > valorAtual + 0.01
-                    }
-                  >
-                    ↔ Confirmar transferência
-                  </button>
-                </>
-              ) : (
-                <div className="card" style={{ padding: 12 }}>
-                  <strong>Cadastre outra pessoa primeiro.</strong>
-                  <p className="muted small">
-                    É preciso ter pelo menos duas pessoas para transferir
-                    uma dívida.
-                  </p>
                 </div>
-              )}
+              ) : null}
+
+              <div style={{ display: "grid", gap: 7 }}>
+                <strong style={{ fontSize: 13 }}>👤 Pessoas que receberão a dívida</strong>
+                <div className="devedor-pessoas-grid">
+                  {destinosDisponiveis.map((pessoa) => {
+                    const ativo = transferenciaPessoaDestinoIds.includes(pessoa.id);
+                    return <button type="button" key={pessoa.id} className={`devedor-pessoa-chip ${ativo ? "ativo" : ""}`} onClick={() => alternarDestinoTransferencia(pessoa.id)} style={{ "--chip-accent": pessoa.corCarta || "#3b82f6" }}>{pessoa.fotoBase64 ? <img src={pessoa.fotoBase64} alt="" /> : <span>{String(pessoa.nome || "?")[0].toUpperCase()}</span>}<b>{pessoa.nome}</b><em>{ativo ? "✓" : "+"}</em></button>;
+                  })}
+                </div>
+              </div>
+
+              <div className="devedor-sentido-grid">
+                <button type="button" className={`toggle-btn ${transferenciaModo === "total" ? "toggle-active" : ""}`} onClick={() => { setTransferenciaModo("total"); setTransferenciaValor(String(valorAtual.toFixed(2))); }}>Dívida toda</button>
+                <button type="button" className={`toggle-btn ${transferenciaModo === "parte" ? "toggle-active" : ""}`} onClick={() => { setTransferenciaModo("parte"); if (!numero(transferenciaValor) || numero(transferenciaValor) >= valorAtual) setTransferenciaValor(String((valorAtual / 2).toFixed(2))); }}>Só uma parte</button>
+              </div>
+
+              {transferenciaModo === "parte" ? <label>Quanto transferir<input inputMode="decimal" value={transferenciaValor} onChange={(e) => setTransferenciaValor(e.target.value)} placeholder="0,00" /><small className="muted">Máximo: {brl(valorAtual)}</small></label> : null}
+
+              <div className="card" style={{ padding: 10, display: "grid", gap: 7 }}>
+                <strong>Prévia da divisão</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span>{pessoaOrigem?.nome || "Pessoa atual"} fica com</span><b>{brl(valorRestante)}</b></div>
+                {partesPreview.map((parte) => {
+                  const pessoa = pessoas.find((item) => item.id === parte.pessoaId);
+                  return <div key={parte.pessoaId} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span>{pessoa?.nome || "Pessoa"}</span><b>{brl(parte.valor)}</b></div>;
+                })}
+                {!partesPreview.length ? <small className="muted">Escolha pelo menos uma pessoa ou um grupo.</small> : null}
+              </div>
+
+              <button className="primary-btn" type="submit" disabled={!transferenciaPessoaDestinoIds.length || !(valorTransferir > 0) || valorTransferir > valorAtual + 0.01}>↔ Confirmar transferência</button>
             </form>
           </div>
         );
@@ -5192,3 +3812,4 @@ export default function QuemMeDevePage() {
     </section>
   );
 }
+  
